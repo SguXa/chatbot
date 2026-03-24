@@ -139,6 +139,12 @@ function updateStats(docs) {
 
 // ── Documents table ─────────────────────────────────────────────────────────
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 const docTableBody = document.getElementById('docTableBody');
 const emptyRow     = document.getElementById('emptyRow');
 
@@ -161,6 +167,9 @@ function renderDocuments(docs) {
     tdName.textContent = doc.filename || doc.file_id;
     tdName.title = doc.filename || '';
 
+    const tdSize = document.createElement('td');
+    tdSize.textContent = doc.size != null ? formatBytes(doc.size) : '—';
+
     const tdChunks = document.createElement('td');
     tdChunks.textContent = doc.chunks != null ? doc.chunks : '—';
 
@@ -180,7 +189,7 @@ function renderDocuments(docs) {
     delBtn.addEventListener('click', () => deleteDocument(doc.file_id, doc.filename));
     tdActions.appendChild(delBtn);
 
-    tr.append(tdName, tdChunks, tdStatus, tdActions);
+    tr.append(tdName, tdSize, tdChunks, tdStatus, tdActions);
     docTableBody.appendChild(tr);
   });
 }

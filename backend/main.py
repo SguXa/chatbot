@@ -202,13 +202,14 @@ async def admin_list_documents(
     result = []
     for f in files:
         filepath = DOCUMENTS_DIR / f["filename"]
-        uploaded_at = int(filepath.stat().st_mtime * 1000) if filepath.exists() else None
+        stat = filepath.stat() if filepath.exists() else None
         result.append(
             {
                 "file_id": f["file_id"],
                 "filename": f["filename"],
                 "chunks": f["chunks"],
-                "uploaded_at": uploaded_at,
+                "size": stat.st_size if stat else None,
+                "uploaded_at": int(stat.st_mtime * 1000) if stat else None,
             }
         )
     return result
@@ -263,8 +264,9 @@ async def admin_upload(
             None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
         )
     except Exception as exc:
+        logger.exception("Ingest failed for %s", safe_name)
         _restore_on_failure()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ingestion failed: {exc}") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ingestion failed. Check server logs.") from exc
 
     if result["chunks_created"] == 0:
         _restore_on_failure()
@@ -275,7 +277,10 @@ async def admin_upload(
 
     # Delete old ChromaDB entry only after new ingestion succeeds
     if old_entry:
-        delete_file(old_entry["file_id"], chroma_client)
+        try:
+            delete_file(old_entry["file_id"], chroma_client)
+        except Exception:
+            logger.warning("Failed to delete old entry %s for %s; index may contain duplicates", old_entry["file_id"], safe_name)
 
     return result
 
