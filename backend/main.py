@@ -179,6 +179,7 @@ async def health(request: Request) -> dict:
         "ollama": ollama_ok,
         "chromadb": chroma_ok,
         "documents_count": documents_count,
+        "app_name": settings.app_name,
     }
 
 
@@ -224,6 +225,10 @@ async def admin_upload(
 
     safe_name = Path(file.filename).name
     dest = DOCUMENTS_DIR / safe_name
+    try:
+        dest.resolve().relative_to(DOCUMENTS_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 50 MB limit.")
@@ -241,7 +246,7 @@ async def admin_upload(
             break
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
         )
@@ -295,7 +300,7 @@ async def admin_reindex(
 
     files_processed = 0
     total_chunks = 0
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     for path in DOCUMENTS_DIR.iterdir():
         if path.suffix.lower() in ALLOWED_EXTENSIONS:
             try:

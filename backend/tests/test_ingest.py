@@ -87,7 +87,7 @@ def make_minimal_docx(text: str, tmp_path: Path) -> Path:
 @pytest.fixture
 def chroma():
     """In-memory ChromaDB client."""
-    return chromadb.Client()
+    return chromadb.EphemeralClient()
 
 
 @pytest.fixture

@@ -25,7 +25,7 @@ SYSTEM_PROMPT = (
 
 @pytest.fixture
 def chroma():
-    return chromadb.Client()
+    return chromadb.EphemeralClient()
 
 
 @pytest.fixture
