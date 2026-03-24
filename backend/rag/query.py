@@ -28,9 +28,13 @@ def search_chunks(
     """
     embedding = embed_fn(question)
     collection = chroma_client.get_or_create_collection("documents")
+    count = collection.count()
+    if count == 0:
+        return []
+    actual_k = min(top_k, count)
     results = collection.query(
         query_embeddings=[embedding],
-        n_results=top_k,
+        n_results=actual_k,
         include=["documents", "metadatas", "distances"],
     )
 

@@ -68,9 +68,6 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     if current_parts:
         chunks.append(" ".join(current_parts))
 
-    if not chunks:
-        return []
-
     # Apply overlap: prepend the last overlap_chars of previous chunk to next chunk
     if overlap_chars <= 0 or len(chunks) <= 1:
         return chunks

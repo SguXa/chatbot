@@ -1,4 +1,5 @@
 """FastAPI application entry point — RAG chatbot backend."""
+import asyncio
 import base64
 import hmac
 import json
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 DOCUMENTS_DIR = Path("/app/documents")
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.txt"
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def load_system_prompt() -> str:
@@ -223,11 +225,14 @@ async def admin_upload(
     safe_name = Path(file.filename).name
     dest = DOCUMENTS_DIR / safe_name
     content = await file.read()
-    dest.write_bytes(content)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 50 MB limit.")
 
     chroma_client = getattr(request.app.state, "chroma_client", None)
     if chroma_client is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+
+    dest.write_bytes(content)
 
     # Remove existing entries for this filename to avoid duplicates
     for f in list_files(chroma_client):
@@ -235,9 +240,14 @@ async def admin_upload(
             delete_file(f["file_id"], chroma_client)
             break
 
-    result = ingest_file(
-        dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
-    )
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
+        )
+    except Exception as exc:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ingestion failed: {exc}") from exc
     return result
 
 
@@ -260,10 +270,9 @@ async def admin_delete_document(
 
     delete_file(file_id, chroma_client)
 
-    if target:
-        filepath = DOCUMENTS_DIR / target["filename"]
-        if filepath.exists():
-            filepath.unlink()
+    filepath = DOCUMENTS_DIR / target["filename"]
+    if filepath.exists():
+        filepath.unlink()
 
     return {"deleted": file_id}
 
@@ -286,15 +295,12 @@ async def admin_reindex(
 
     files_processed = 0
     total_chunks = 0
+    loop = asyncio.get_event_loop()
     for path in DOCUMENTS_DIR.iterdir():
         if path.suffix.lower() in ALLOWED_EXTENSIONS:
             try:
-                result = ingest_file(
-                    path,
-                    chroma_client,
-                    _sync_embed,
-                    settings.chunk_size,
-                    settings.chunk_overlap,
+                result = await loop.run_in_executor(
+                    None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
                 )
                 files_processed += 1
                 total_chunks += result["chunks_created"]
