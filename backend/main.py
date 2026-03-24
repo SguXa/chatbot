@@ -235,7 +235,7 @@ async def admin_upload(
         dest.resolve().relative_to(DOCUMENTS_DIR.resolve())
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
-    content = await file.read()
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 50 MB limit.")
 
@@ -256,6 +256,13 @@ async def admin_upload(
     except Exception as exc:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ingestion failed: {exc}") from exc
+
+    if result["chunks_created"] == 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No text could be extracted from the file.",
+        )
 
     # Delete old ChromaDB entry only after new ingestion succeeds
     if old_entry:

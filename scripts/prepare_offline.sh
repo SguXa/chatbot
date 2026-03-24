@@ -15,8 +15,16 @@ echo "Starting Ollama service..."
 docker compose up -d ollama
 
 echo "Waiting for Ollama to be ready..."
+timeout_secs=60
+elapsed=0
 until docker compose exec ollama ollama list > /dev/null 2>&1; do
   sleep 2
+  elapsed=$((elapsed + 2))
+  if [ "$elapsed" -ge "$timeout_secs" ]; then
+    echo "ERROR: Ollama did not become ready within ${timeout_secs}s. Check: docker compose logs ollama" >&2
+    docker compose stop ollama
+    exit 1
+  fi
 done
 
 LLM_MODEL="${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"

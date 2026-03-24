@@ -104,7 +104,7 @@
     sources.forEach(function (src) {
       const pill = document.createElement('span');
       pill.className = 'source-pill';
-      const label = src.page != null
+      const label = src.page
         ? `${src.filename} · p.${src.page}`
         : src.filename;
       pill.textContent = label;
