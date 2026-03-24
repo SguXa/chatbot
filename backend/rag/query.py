@@ -1,5 +1,6 @@
 """Query pipeline: embedding, chunk search, prompt building, and answer streaming."""
 import json
+import re
 from typing import AsyncGenerator, Callable
 
 import httpx
@@ -71,12 +72,13 @@ def build_prompt(
         context_parts.append(f"[Source {i}: {source}]\n{chunk['text']}")
 
     context = "\n\n".join(context_parts)
-    return (
-        system_prompt_template
-        .replace("{app_name}", app_name)
-        .replace("{context}", context)
-        .replace("{question}", question)
-    )
+    replacements = {
+        "{app_name}": app_name,
+        "{context}": context,
+        "{question}": question,
+    }
+    pattern = re.compile("|".join(re.escape(k) for k in replacements))
+    return pattern.sub(lambda m: replacements[m.group(0)], system_prompt_template)
 
 
 async def generate_answer(

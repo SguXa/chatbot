@@ -246,10 +246,6 @@ async def admin_upload(
 
     safe_name = Path(file.filename).name
     dest = DOCUMENTS_DIR / safe_name
-    try:
-        dest.resolve().relative_to(DOCUMENTS_DIR.resolve())
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 50 MB limit.")
