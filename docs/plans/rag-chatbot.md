@@ -223,11 +223,11 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 8: Frontend Dockerfile and Nginx configuration
 
-- [ ] Create `frontend/Dockerfile`:
+- [x] Create `frontend/Dockerfile`:
       FROM nginx:alpine
       COPY nginx.conf /etc/nginx/nginx.conf
       COPY static/ /usr/share/nginx/html/
-- [ ] Create `frontend/nginx.conf`:
+- [x] Create `frontend/nginx.conf`:
       Listen on port 80.
       Serve /usr/share/nginx/html as root.
       Location /api/ — proxy_pass to http://backend:8000/api/ with proper proxy headers.
@@ -236,7 +236,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
       Gzip compression enabled for text/html, text/css, application/javascript.
       Cache-Control: no-cache for HTML files, 1 day for CSS/JS.
       No basic auth at Nginx level — auth is handled in backend endpoints.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 9: Integration smoke test and final wiring
 
