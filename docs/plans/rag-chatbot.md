@@ -71,13 +71,13 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 3: Backend — chunker and ingestion pipeline
 
-- [ ] Create `backend/rag/chunker.py`:
+- [x] Create `backend/rag/chunker.py`:
       Function `chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]`
       Split by paragraphs first (double newline), then merge short paragraphs,
       split long ones by sentences. Respect chunk_size in approximate tokens
       (1 token ≈ 4 chars). Apply overlap by repeating the last N chars of previous chunk
       at the start of next chunk.
-- [ ] Create `backend/rag/ingest.py`:
+- [x] Create `backend/rag/ingest.py`:
       Function `parse_pdf(path: Path) -> str` using pdfplumber, extract text page by page,
       preserve page number in metadata.
       Function `parse_docx(path: Path) -> str` using python-docx.
@@ -91,17 +91,17 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
         6. Returns {filename, chunks_created, file_id}
       Function `delete_file(file_id: str, chroma_client)` removes all chunks by file_id.
       Function `list_files(chroma_client) -> list[dict]` returns unique files with chunk counts.
-- [ ] Create `backend/rag/__init__.py` (empty)
-- [ ] Write tests in `backend/tests/test_chunker.py`:
+- [x] Create `backend/rag/__init__.py` (empty)
+- [x] Write tests in `backend/tests/test_chunker.py`:
       Test that chunker respects chunk_size, produces overlap, handles empty input,
       handles single paragraph shorter than chunk_size.
-- [ ] Write tests in `backend/tests/test_ingest.py`:
+- [x] Write tests in `backend/tests/test_ingest.py`:
       Use a small test PDF and test DOCX (create minimal ones in fixtures).
       Test parse_pdf returns non-empty string.
       Test ingest_file stores correct number of chunks.
       Test delete_file removes chunks.
       Use a real in-memory ChromaDB client for tests.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Backend — query pipeline and Ollama client
 
