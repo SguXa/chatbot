@@ -94,7 +94,7 @@ def verify_basic_auth(request: Request) -> None:
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
-    if not (hmac.compare_digest(username, settings.admin_user) and
+    if not (hmac.compare_digest(username, settings.admin_user) &
             hmac.compare_digest(password, settings.admin_password)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -105,7 +105,6 @@ def verify_basic_auth(request: Request) -> None:
 
 class ChatRequest(BaseModel):
     question: str
-    history: list[dict[str, str]] | None = None
 
 
 @app.post("/api/chat")
@@ -169,7 +168,7 @@ async def health(request: Request) -> dict:
     try:
         chroma_client = request.app.state.chroma_client
         col = chroma_client.get_or_create_collection("documents")
-        documents_count = col.count()
+        documents_count = len(list_files(chroma_client))
         chroma_ok = True
     except Exception:
         pass

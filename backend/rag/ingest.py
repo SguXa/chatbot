@@ -69,13 +69,16 @@ def ingest_file(
             pdf_page_boundaries.append((offset, end, page_num))
             offset = end + 2  # account for \n\n separator
 
+    overlap_chars = chunk_overlap * 4
     for chunk_index, chunk_text_val in enumerate(chunks):
         # Determine page number for PDF chunks
         page = None
         if pdf_page_boundaries:
-            # Find which page the chunk (without overlap prefix) belongs to
-            # Use the non-overlap part to find the page: search for chunk content in full_text
-            search_text = chunk_text_val
+            # Skip the overlap prefix for chunks after the first so we find
+            # where this chunk's own content begins, not the repeated tail of
+            # the previous chunk.
+            skip = overlap_chars if chunk_index > 0 else 0
+            search_text = chunk_text_val[skip:]
             pos = full_text.find(search_text[:50]) if len(search_text) >= 50 else full_text.find(search_text)
             if pos >= 0:
                 for start, end, pnum in pdf_page_boundaries:

@@ -172,12 +172,16 @@
             continue;
           }
 
-          if (event.token) {
+          if (event.error) {
+            botMessage.bubble.textContent = 'Error: ' + event.error;
+            botMessage.bubble.classList.add('error-text');
+            scrollBottom();
+          } else if (event.token) {
             botMessage.bubble.textContent += event.token;
             scrollBottom();
           }
 
-          if (event.done) {
+          if (event.done && !event.error) {
             renderSources(botMessage.sources, event.sources);
             scrollBottom();
           }
@@ -190,8 +194,9 @@
         if (payload) {
           try {
             const event = JSON.parse(payload);
-            if (event.token) botMessage.bubble.textContent += event.token;
-            if (event.done) renderSources(botMessage.sources, event.sources);
+            if (event.error) { botMessage.bubble.textContent = 'Error: ' + event.error; }
+            else if (event.token) botMessage.bubble.textContent += event.token;
+            if (event.done && !event.error) renderSources(botMessage.sources, event.sources);
             scrollBottom();
           } catch (_) { /* ignore */ }
         }
