@@ -1,0 +1,47 @@
+version: "3.9"
+
+networks:
+  chatbot-net:
+    driver: bridge
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    networks:
+      - chatbot-net
+    volumes:
+      - ./volumes/ollama:/root/.ollama
+    restart: unless-stopped
+
+  chromadb:
+    image: chromadb/chroma:latest
+    networks:
+      - chatbot-net
+    volumes:
+      - ./volumes/chromadb:/chroma/chroma
+    environment:
+      CHROMA_SERVER_HOST: "0.0.0.0"
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    networks:
+      - chatbot-net
+    env_file:
+      - .env
+    volumes:
+      - ./data/documents:/app/documents
+    depends_on:
+      - ollama
+      - chromadb
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    networks:
+      - chatbot-net
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

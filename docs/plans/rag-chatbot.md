@@ -21,19 +21,19 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 1: Project scaffold and configuration
 
-- [ ] Create the full directory structure as defined in ARCHITECTURE.md:
+- [x] Create the full directory structure as defined in ARCHITECTURE.md:
       chatbot/, backend/, backend/rag/, backend/prompts/, backend/tests/,
       frontend/, frontend/static/, frontend/static/css/, frontend/static/js/,
       data/documents/, volumes/ollama/, volumes/chromadb/, scripts/
-- [ ] Create `.env` file with all variables from ARCHITECTURE.md (.env section),
+- [x] Create `.env` file with all variables from ARCHITECTURE.md (.env section),
       use sensible defaults (APP_NAME="Documentation Assistant", UI_LANGUAGE=en,
       LLM_MODEL=qwen2.5:7b-instruct-q4_K_M, EMBED_MODEL=multilingual-e5-large,
       CHUNK_SIZE=500, CHUNK_OVERLAP=50, TOP_K=3,
       ADMIN_USER=admin, ADMIN_PASSWORD=changeme,
       OLLAMA_URL=http://ollama:11434, CHROMA_URL=http://chromadb:8001)
-- [ ] Create `.gitignore` ignoring: volumes/, data/documents/, .env, __pycache__,
+- [x] Create `.gitignore` ignoring: volumes/, data/documents/, .env, __pycache__,
       *.pyc, .pytest_cache, *.egg-info
-- [ ] Create `docker-compose.yml` with four services: frontend, backend, ollama, chromadb.
+- [x] Create `docker-compose.yml` with four services: frontend, backend, ollama, chromadb.
       All services on internal network "chatbot-net".
       Only frontend exposes port 3000 externally.
       backend depends_on ollama and chromadb.
@@ -43,11 +43,11 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
         env CHROMA_SERVER_HOST=0.0.0.0
       backend service: build ./backend, env from .env file, volume ./data/documents:/app/documents
       frontend service: build ./frontend
-- [ ] Create `scripts/prepare_offline.sh` — script that starts ollama service, pulls both
+- [x] Create `scripts/prepare_offline.sh` — script that starts ollama service, pulls both
       models (LLM + embed), then stops. Include clear usage comment at top.
-- [ ] Add placeholder `data/documents/.gitkeep` and `volumes/ollama/.gitkeep`
+- [x] Add placeholder `data/documents/.gitkeep` and `volumes/ollama/.gitkeep`
       and `volumes/chromadb/.gitkeep`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Backend — config and dependencies
 

@@ -1,0 +1,11 @@
+
+# ralphex progress logs
+.ralphex/progress/
+
+volumes/
+data/documents/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
