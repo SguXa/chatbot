@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -28,6 +29,8 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def load_system_prompt() -> str:
+    if not SYSTEM_PROMPT_PATH.exists():
+        raise FileNotFoundError(f"System prompt file not found: {SYSTEM_PROMPT_PATH}")
     return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
@@ -49,22 +52,20 @@ def create_chroma_client():
     return chromadb.HttpClient(host=host, port=port)
 
 
-app = FastAPI(title=settings.app_name)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    if settings.admin_password == "changeme":
+        logger.warning(
+            "SECURITY: admin_password is set to the default value. "
+            "Set ADMIN_PASSWORD in your .env file before deploying."
+        )
     if not hasattr(app.state, "system_prompt"):
-        app.state.system_prompt = load_system_prompt()
+        try:
+            app.state.system_prompt = load_system_prompt()
+        except FileNotFoundError as exc:
+            logger.error("Cannot start: %s", exc)
+            raise
     if not hasattr(app.state, "chroma_client"):
         try:
             app.state.chroma_client = create_chroma_client()
@@ -76,6 +77,18 @@ async def startup() -> None:
             resp.raise_for_status()
     except Exception as exc:
         logger.warning("Ollama not reachable at startup: %s", exc)
+    yield
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def verify_basic_auth(request: Request) -> None:
@@ -331,7 +344,7 @@ async def admin_reindex(
     total_chunks = 0
     loop = asyncio.get_running_loop()
     for path in DOCUMENTS_DIR.iterdir():
-        if path.suffix.lower() in ALLOWED_EXTENSIONS:
+        if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS:
             try:
                 result = await loop.run_in_executor(
                     None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
