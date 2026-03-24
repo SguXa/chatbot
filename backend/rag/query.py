@@ -108,9 +108,9 @@ async def generate_answer(
                         yield token
                     if data.get("done", False):
                         break
-    except httpx.ConnectError as exc:
-        raise ConnectionError(f"Cannot connect to Ollama at {ollama_url}") from exc
     except httpx.TimeoutException as exc:
         raise ConnectionError(f"Ollama request timed out at {ollama_url}") from exc
     except httpx.HTTPStatusError as exc:
         raise ConnectionError(f"Ollama returned error {exc.response.status_code}") from exc
+    except httpx.TransportError as exc:
+        raise ConnectionError(f"Cannot connect to Ollama at {ollama_url}") from exc

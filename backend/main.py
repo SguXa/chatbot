@@ -13,7 +13,7 @@ import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import settings
 from rag.ingest import delete_file, ingest_file, list_files
@@ -96,8 +96,9 @@ def verify_basic_auth(request: Request) -> None:
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
-    if not (hmac.compare_digest(username, settings.admin_user) &
-            hmac.compare_digest(password, settings.admin_password)):
+    valid_user = hmac.compare_digest(username, settings.admin_user)
+    valid_pass = hmac.compare_digest(password, settings.admin_password)
+    if not (valid_user and valid_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -106,7 +107,7 @@ def verify_basic_auth(request: Request) -> None:
 
 
 class ChatRequest(BaseModel):
-    question: str
+    question: str = Field(..., max_length=2000)
 
 
 @app.post("/api/chat")
@@ -246,7 +247,15 @@ async def admin_upload(
     # Remember old entry (if any) before overwriting — so we can clean up after success
     old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)
 
+    # Preserve old file bytes so we can restore them if ingestion fails
+    old_file_bytes = dest.read_bytes() if dest.exists() else None
     dest.write_bytes(content)
+
+    def _restore_on_failure():
+        if old_file_bytes is not None:
+            dest.write_bytes(old_file_bytes)
+        else:
+            dest.unlink(missing_ok=True)
 
     try:
         loop = asyncio.get_running_loop()
@@ -254,11 +263,11 @@ async def admin_upload(
             None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
         )
     except Exception as exc:
-        dest.unlink(missing_ok=True)
+        _restore_on_failure()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ingestion failed: {exc}") from exc
 
     if result["chunks_created"] == 0:
-        dest.unlink(missing_ok=True)
+        _restore_on_failure()
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No text could be extracted from the file.",
