@@ -199,7 +199,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 7: Frontend — admin panel
 
-- [ ] Create `frontend/static/admin.html`:
+- [x] Create `frontend/static/admin.html`:
       Admin panel page.
       Header: "Admin panel" + "Admin" badge.
       Stats row: 3 metric cards — Documents count, Chunks count, placeholder for last indexed date.
@@ -211,7 +211,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
         refreshes document list on completion.
       HTTP Basic Auth: on 401 from any admin endpoint, show login modal (username + password inputs).
       Store credentials in sessionStorage (not localStorage) so they persist for the session.
-- [ ] Create `frontend/static/js/admin.js`:
+- [x] Create `frontend/static/js/admin.js`:
       authFetch(url, options): wrapper that adds Authorization header from sessionStorage,
         shows login modal on 401.
       loadDocuments(): GET /api/admin/documents, render table, update stat cards.
@@ -219,7 +219,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
       deleteDocument(file_id): DELETE /api/admin/documents/{file_id} with confirm dialog.
       reindexAll(): POST /api/admin/reindex, disable button + show spinner, reload on done.
       Drag-and-drop: highlight drop zone on dragover, handle drop event, call uploadFile.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 8: Frontend Dockerfile and Nginx configuration
 
