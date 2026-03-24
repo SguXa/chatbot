@@ -51,23 +51,23 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 2: Backend — config and dependencies
 
-- [ ] Create `backend/requirements.txt` with pinned versions:
+- [x] Create `backend/requirements.txt` with pinned versions:
       fastapi>=0.111, uvicorn[standard]>=0.30, python-multipart>=0.0.9,
       pdfplumber>=0.11, python-docx>=1.1, chromadb>=0.5,
       httpx>=0.27, pydantic>=2.7, pydantic-settings>=2.3,
       python-jose[cryptography]>=3.3, passlib[bcrypt]>=1.7,
       pytest>=8.0, pytest-asyncio>=0.23, httpx>=0.27
-- [ ] Create `backend/config.py` using pydantic-settings BaseSettings.
+- [x] Create `backend/config.py` using pydantic-settings BaseSettings.
       Read all variables from ARCHITECTURE.md (.env section).
       Export a singleton `settings = Settings()`.
-- [ ] Create `backend/Dockerfile`:
+- [x] Create `backend/Dockerfile`:
       FROM python:3.11-slim, WORKDIR /app,
       COPY requirements.txt and pip install --no-cache-dir,
       COPY . .,
       CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-- [ ] Create `backend/prompts/system_prompt.txt` with the exact prompt template
+- [x] Create `backend/prompts/system_prompt.txt` with the exact prompt template
       from ARCHITECTURE.md (Prompt Template section). Use {context} and {question} placeholders.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Backend — chunker and ingestion pipeline
 
