@@ -102,6 +102,23 @@ def test_build_prompt_app_name_substituted():
     assert "MyApp" in prompt
 
 
+def test_build_prompt_empty_chunks():
+    """Empty chunk list should produce a valid prompt with the question present."""
+    prompt = build_prompt("What is X?", [], SYSTEM_PROMPT)
+    assert "What is X?" in prompt
+    assert isinstance(prompt, str)
+    assert len(prompt) > 0
+
+
+def test_build_prompt_no_format_injection():
+    """Curly braces with unknown keys in document content must not raise KeyError."""
+    chunks = [{"text": "See {unknown_var} for details.", "filename": "doc.pdf", "page": 1}]
+    # Should not raise KeyError even though the document contains an unknown {} pattern
+    prompt = build_prompt("Q?", chunks, SYSTEM_PROMPT, app_name="MyApp")
+    assert "See {unknown_var} for details." in prompt
+    assert "MyApp" in prompt
+
+
 # ---------------------------------------------------------------------------
 # search_chunks
 # ---------------------------------------------------------------------------
@@ -132,6 +149,20 @@ def test_search_chunks_filename_populated(chroma_with_docs, dummy_embed):
     results = search_chunks("Q", chroma_with_docs, dummy_embed, top_k=2)
     for r in results:
         assert r["filename"] == "science.pdf"
+
+
+def test_search_chunks_empty_collection_returns_empty(dummy_embed):
+    """Empty query results should return an empty list without raising."""
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[]],
+        "metadatas": [[]],
+        "distances": [[]],
+    }
+    mock_chroma = MagicMock()
+    mock_chroma.get_or_create_collection.return_value = mock_collection
+    results = search_chunks("anything", mock_chroma, dummy_embed, top_k=3)
+    assert results == []
 
 
 # ---------------------------------------------------------------------------

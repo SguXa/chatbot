@@ -21,6 +21,8 @@ services:
       - ./volumes/chromadb:/chroma/chroma
     environment:
       CHROMA_SERVER_HOST: "0.0.0.0"
+      CHROMA_SERVER_HTTP_PORT: "8001"
+      IS_PERSISTENT: "1"
     restart: unless-stopped
 
   backend:

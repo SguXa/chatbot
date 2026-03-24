@@ -63,6 +63,8 @@ def ingest_file(
     if page_map:
         offset = 0
         for page_num, page_text in page_map.items():
+            if not page_text:
+                continue  # skip empty pages; full_text omits them too
             end = offset + len(page_text)
             pdf_page_boundaries.append((offset, end, page_num))
             offset = end + 2  # account for \n\n separator

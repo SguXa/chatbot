@@ -5,6 +5,8 @@ import chromadb
 import pytest
 from fastapi.testclient import TestClient
 
+from config import settings
+
 
 @pytest.fixture
 def mock_chroma():
@@ -32,5 +34,7 @@ def test_client(mock_chroma, tmp_path, monkeypatch):
 
 @pytest.fixture
 def admin_headers():
-    creds = base64.b64encode(b"admin:changeme").decode()
+    creds = base64.b64encode(
+        f"{settings.admin_user}:{settings.admin_password}".encode()
+    ).decode()
     return {"Authorization": f"Basic {creds}"}

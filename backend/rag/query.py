@@ -67,10 +67,11 @@ def build_prompt(
         context_parts.append(f"[Source {i}: {source}]\n{chunk['text']}")
 
     context = "\n\n".join(context_parts)
-    return system_prompt_template.format(
-        app_name=app_name,
-        context=context,
-        question=question,
+    return (
+        system_prompt_template
+        .replace("{app_name}", app_name)
+        .replace("{context}", context)
+        .replace("{question}", question)
     )
 
 

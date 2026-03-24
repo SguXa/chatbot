@@ -76,6 +76,14 @@ All configuration lives in `.env` in the project root.
 | Response time  | 10–20 seconds for a typical question                 |
 | Minimum server | 32 GB RAM recommended; 16 GB usable minimum          |
 
+## Running Tests
+
+```bash
+cd backend
+pip install -r requirements.txt
+python -m pytest tests/ -v --tb=short
+```
+
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full design decisions, API contract, and file

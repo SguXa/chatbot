@@ -93,12 +93,11 @@ def test_admin_delete_requires_auth(test_client):
 
 
 def test_admin_delete_nonexistent_file_id(test_client, admin_headers):
-    """Deleting a non-existent file_id should succeed (no-op)."""
+    """Deleting a non-existent file_id should return 404."""
     resp = test_client.delete(
         "/api/admin/documents/nonexistent-id", headers=admin_headers
     )
-    assert resp.status_code == 200
-    assert resp.json()["deleted"] == "nonexistent-id"
+    assert resp.status_code == 404
 
 
 def test_admin_reindex_requires_auth(test_client):

@@ -1,5 +1,6 @@
 """FastAPI application entry point — RAG chatbot backend."""
 import base64
+import hmac
 import json
 import logging
 import time
@@ -27,6 +28,17 @@ def load_system_prompt() -> str:
     return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
+def _sync_embed(text: str) -> list[float]:
+    """Synchronous embedding via Ollama — used during file ingest."""
+    with httpx.Client(timeout=60.0) as client:
+        resp = client.post(
+            f"{settings.ollama_url}/api/embeddings",
+            json={"model": settings.embed_model, "prompt": text},
+        )
+        resp.raise_for_status()
+        return resp.json()["embedding"]
+
+
 def create_chroma_client():
     url = settings.chroma_url.replace("http://", "").replace("https://", "")
     host, port = url.rsplit(":", 1)
@@ -38,7 +50,7 @@ app = FastAPI(title=settings.app_name)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -80,7 +92,8 @@ def verify_basic_auth(request: Request) -> None:
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
-    if username != settings.admin_user or password != settings.admin_password:
+    if not (hmac.compare_digest(username, settings.admin_user) and
+            hmac.compare_digest(password, settings.admin_password)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -96,7 +109,9 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
     """Stream an answer to the user's question using RAG."""
-    chroma_client = request.app.state.chroma_client
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
     system_prompt = request.app.state.system_prompt
 
     async def event_stream():
@@ -171,13 +186,15 @@ async def admin_list_documents(
     _: None = Depends(verify_basic_auth),
 ) -> list[dict]:
     """List all indexed documents with metadata."""
-    chroma_client = request.app.state.chroma_client
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
     files = list_files(chroma_client)
 
     result = []
     for f in files:
         filepath = DOCUMENTS_DIR / f["filename"]
-        uploaded_at = filepath.stat().st_mtime if filepath.exists() else None
+        uploaded_at = int(filepath.stat().st_mtime * 1000) if filepath.exists() else None
         result.append(
             {
                 "file_id": f["file_id"],
@@ -203,23 +220,23 @@ async def admin_upload(
             detail=f"Unsupported file type '{suffix}'. Only .pdf and .docx are allowed.",
         )
 
-    dest = DOCUMENTS_DIR / file.filename
+    safe_name = Path(file.filename).name
+    dest = DOCUMENTS_DIR / safe_name
     content = await file.read()
     dest.write_bytes(content)
 
-    chroma_client = request.app.state.chroma_client
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
-    def sync_embed(text: str) -> list[float]:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(
-                f"{settings.ollama_url}/api/embeddings",
-                json={"model": settings.embed_model, "prompt": text},
-            )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
+    # Remove existing entries for this filename to avoid duplicates
+    for f in list_files(chroma_client):
+        if f["filename"] == safe_name:
+            delete_file(f["file_id"], chroma_client)
+            break
 
     result = ingest_file(
-        dest, chroma_client, sync_embed, settings.chunk_size, settings.chunk_overlap
+        dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
     )
     return result
 
@@ -231,11 +248,15 @@ async def admin_delete_document(
     _: None = Depends(verify_basic_auth),
 ) -> dict:
     """Delete a document and all its chunks from the vector store."""
-    chroma_client = request.app.state.chroma_client
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
     # Resolve filename before deletion
     files = list_files(chroma_client)
     target = next((f for f in files if f["file_id"] == file_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     delete_file(file_id, chroma_client)
 
@@ -253,22 +274,15 @@ async def admin_reindex(
     _: None = Depends(verify_basic_auth),
 ) -> dict:
     """Rebuild the entire vector index from files on disk."""
-    chroma_client = request.app.state.chroma_client
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
     start = time.time()
 
     try:
         chroma_client.delete_collection("documents")
     except Exception:
         pass
-
-    def sync_embed(text: str) -> list[float]:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(
-                f"{settings.ollama_url}/api/embeddings",
-                json={"model": settings.embed_model, "prompt": text},
-            )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
 
     files_processed = 0
     total_chunks = 0
@@ -278,7 +292,7 @@ async def admin_reindex(
                 result = ingest_file(
                     path,
                     chroma_client,
-                    sync_embed,
+                    _sync_embed,
                     settings.chunk_size,
                     settings.chunk_overlap,
                 )
