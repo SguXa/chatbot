@@ -125,7 +125,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 5: Backend — FastAPI application and all endpoints
 
-- [ ] Create `backend/main.py` with FastAPI app:
+- [x] Create `backend/main.py` with FastAPI app:
       Import settings from config.py.
       On startup: initialize ChromaDB client (HTTP client pointing to CHROMA_URL),
         verify Ollama is reachable (GET {OLLAMA_URL}/api/tags), log warning if not.
@@ -159,17 +159,17 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
         Deletes entire ChromaDB collection, re-ingests all files in /app/documents/
         Returns {files_processed, total_chunks, duration_seconds}
 
-- [ ] Add CORS middleware allowing all origins (internal network, no security concern)
-- [ ] Add basic auth helper function that checks Authorization header against settings
-- [ ] Write tests in `backend/tests/test_api.py`:
+- [x] Add CORS middleware allowing all origins (internal network, no security concern)
+- [x] Add basic auth helper function that checks Authorization header against settings
+- [x] Write tests in `backend/tests/test_api.py`:
       Use FastAPI TestClient.
       Test /api/health returns 200 with correct shape.
       Test /api/admin/documents requires auth (401 without, 200 with).
       Test /api/admin/upload rejects non-PDF/DOCX with 400.
       Mock ChromaDB and Ollama clients in tests.
-- [ ] Create `backend/tests/__init__.py` (empty) and `backend/tests/conftest.py`
+- [x] Create `backend/tests/__init__.py` (empty) and `backend/tests/conftest.py`
       with shared fixtures (test client, mock settings).
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 6: Frontend — chat UI
 
