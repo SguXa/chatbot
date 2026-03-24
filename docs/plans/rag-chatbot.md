@@ -173,7 +173,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 6: Frontend — chat UI
 
-- [ ] Create `frontend/static/index.html`:
+- [x] Create `frontend/static/index.html`:
       Clean, minimal chat interface.
       Header with app name (loaded from /api/health response or hardcoded from meta tag).
       Status indicator (green dot = online, red = offline) — check /api/health on load.
@@ -183,19 +183,19 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
       Typing indicator (animated dots) while waiting for response.
       No external CSS frameworks — plain CSS only.
       Responsive: works on 1024px+ screens.
-- [ ] Create `frontend/static/css/main.css`:
+- [x] Create `frontend/static/css/main.css`:
       CSS custom properties for colors (light mode, clean neutral palette).
       Smooth message appear animation.
       Source pill styles: small, muted, clickable appearance.
       Typing indicator: three animated dots.
-- [ ] Create `frontend/static/js/chat.js`:
+- [x] Create `frontend/static/js/chat.js`:
       On load: fetch /api/health, update status dot.
       sendMessage(): POST to /api/chat, read SSE stream with EventSource or fetch+ReadableStream.
       Parse each SSE event, append tokens to current bot message incrementally (streaming effect).
       On final event: append source pills.
       Handle errors: show error message in chat if request fails.
       Disable input while waiting for response.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 7: Frontend — admin panel
 
