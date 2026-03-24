@@ -105,7 +105,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 4: Backend — query pipeline and Ollama client
 
-- [ ] Create `backend/rag/query.py`:
+- [x] Create `backend/rag/query.py`:
       Function `get_embedding(text: str, ollama_url: str, model: str) -> list[float]`
         POST to {ollama_url}/api/embeddings with model and prompt, return embedding list.
       Function `search_chunks(question: str, chroma_client, embed_fn, top_k: int) -> list[dict]`
@@ -116,12 +116,12 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
       Function `generate_answer(prompt: str, ollama_url: str, model: str) -> AsyncGenerator[str]`
         POST to {ollama_url}/api/generate with stream=True, yield text tokens as they arrive.
         Handle connection errors gracefully.
-- [ ] Write tests in `backend/tests/test_query.py`:
+- [x] Write tests in `backend/tests/test_query.py`:
       Mock httpx calls to Ollama.
       Test build_prompt includes chunk text and source labels.
       Test search_chunks calls ChromaDB with correct parameters.
       Use pytest-asyncio for async tests.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 5: Backend — FastAPI application and all endpoints
 
