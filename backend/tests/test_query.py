@@ -242,3 +242,41 @@ async def test_generate_answer_raises_on_connect_error():
         with pytest.raises(ConnectionError, match="Cannot connect to Ollama"):
             async for _ in generate_answer("prompt", "http://ollama:11434", "model"):
                 pass
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_raises_on_timeout():
+    import httpx as _httpx
+
+    mock_client = MagicMock()
+    mock_client.stream = MagicMock(side_effect=_httpx.TimeoutException("timed out"))
+
+    mock_client_ctx = MagicMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("rag.query.httpx.AsyncClient", return_value=mock_client_ctx):
+        with pytest.raises(ConnectionError, match="timed out"):
+            async for _ in generate_answer("prompt", "http://ollama:11434", "model"):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_raises_on_http_error():
+    import httpx as _httpx
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    http_err = _httpx.HTTPStatusError("server error", request=MagicMock(), response=mock_response)
+
+    mock_client = MagicMock()
+    mock_client.stream = MagicMock(side_effect=http_err)
+
+    mock_client_ctx = MagicMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("rag.query.httpx.AsyncClient", return_value=mock_client_ctx):
+        with pytest.raises(ConnectionError, match="500"):
+            async for _ in generate_answer("prompt", "http://ollama:11434", "model"):
+                pass

@@ -3,6 +3,8 @@ import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 
 def test_health_returns_200(test_client):
     resp = test_client.get("/api/health")
@@ -113,3 +115,46 @@ def test_admin_reindex_empty_dir(test_client, admin_headers):
     assert data["files_processed"] == 0
     assert data["total_chunks"] == 0
     assert "duration_seconds" in data
+
+
+def test_chat_503_when_no_chroma(test_client):
+    """Chat endpoint returns 503 when ChromaDB is unavailable."""
+    import main as main_module
+    original = main_module.app.state.chroma_client
+    try:
+        del main_module.app.state.chroma_client
+        resp = test_client.post("/api/chat", json={"question": "hello"})
+        assert resp.status_code == 503
+    finally:
+        main_module.app.state.chroma_client = original
+
+
+def test_admin_upload_rejects_oversized_file(test_client, admin_headers):
+    """Upload endpoint returns 413 when file exceeds 50 MB."""
+    large_content = b"x" * (50 * 1024 * 1024 + 1)
+    files = {"file": ("large.pdf", large_content, "application/pdf")}
+    resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+    assert resp.status_code == 413
+
+
+def test_admin_upload_returns_500_on_ingest_failure(test_client, admin_headers, tmp_path):
+    """Upload endpoint returns 500 and cleans up file when ingestion fails."""
+    import main as main_module
+
+    minimal_pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF"
+    files = {"file": ("fail.pdf", minimal_pdf, "application/pdf")}
+
+    with patch("main.ingest_file", side_effect=RuntimeError("embed failed")):
+        resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+
+    assert resp.status_code == 500
+    # File should have been cleaned up
+    dest = main_module.DOCUMENTS_DIR / "fail.pdf"
+    assert not dest.exists()
+
+
+def test_admin_upload_missing_filename(test_client, admin_headers):
+    """Upload without a filename is rejected (400 from our check or 422 from FastAPI)."""
+    files = {"file": ("", b"data", "application/pdf")}
+    resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+    assert resp.status_code in (400, 422)

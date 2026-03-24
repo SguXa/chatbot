@@ -43,11 +43,9 @@ def test_no_overlap_when_zero():
     sentence = "Hello world. " * 30
     result = chunk_text(sentence, 20, 0)
     assert len(result) >= 2
-    # With overlap=0, the second chunk should NOT start with the tail of the first
-    # (it might share a sentence boundary but not an explicit overlap prefix)
+    # With overlap=0, the second chunk must not begin with the explicit tail of the first
     first_tail = result[0][-5:]
-    # Just verify we get distinct chunks without crashing
-    assert all(isinstance(c, str) for c in result)
+    assert not result[1].startswith(first_tail)
 
 
 def test_multi_paragraph():

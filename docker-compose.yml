@@ -22,7 +22,7 @@ services:
     environment:
       CHROMA_SERVER_HOST: "0.0.0.0"
       CHROMA_SERVER_HTTP_PORT: "8001"
-      IS_PERSISTENT: "1"
+      CHROMA_IS_PERSISTENT: "TRUE"
     restart: unless-stopped
 
   backend:

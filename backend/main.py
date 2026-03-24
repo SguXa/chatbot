@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import chromadb
 import httpx
@@ -42,9 +43,10 @@ def _sync_embed(text: str) -> list[float]:
 
 
 def create_chroma_client():
-    url = settings.chroma_url.replace("http://", "").replace("https://", "")
-    host, port = url.rsplit(":", 1)
-    return chromadb.HttpClient(host=host, port=int(port))
+    parsed = urlparse(settings.chroma_url)
+    host = parsed.hostname
+    port = parsed.port or 8001
+    return chromadb.HttpClient(host=host, port=port)
 
 
 app = FastAPI(title=settings.app_name)
@@ -129,11 +131,14 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
             prompt = build_prompt(
                 body.question, chunks, system_prompt, settings.app_name
             )
-            sources = [
-                {"filename": c["filename"], "page": c["page"]}
-                for c in chunks
-                if c.get("filename")
-            ]
+            seen = set()
+            sources = []
+            for c in chunks:
+                if c.get("filename"):
+                    key = (c["filename"], c["page"])
+                    if key not in seen:
+                        seen.add(key)
+                        sources.append({"filename": c["filename"], "page": c["page"]})
 
             async for token in generate_answer(
                 prompt, settings.ollama_url, settings.llm_model
@@ -166,10 +171,10 @@ async def health(request: Request) -> dict:
         pass
 
     try:
-        chroma_client = request.app.state.chroma_client
-        col = chroma_client.get_or_create_collection("documents")
-        documents_count = len(list_files(chroma_client))
-        chroma_ok = True
+        chroma_client = getattr(request.app.state, "chroma_client", None)
+        if chroma_client is not None:
+            documents_count = len(list_files(chroma_client))
+            chroma_ok = True
     except Exception:
         pass
 
@@ -215,6 +220,8 @@ async def admin_upload(
     _: None = Depends(verify_basic_auth),
 ) -> dict:
     """Upload a PDF or DOCX file and ingest it into the vector store."""
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required.")
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -236,13 +243,10 @@ async def admin_upload(
     if chroma_client is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
-    dest.write_bytes(content)
+    # Remember old entry (if any) before overwriting — so we can clean up after success
+    old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)
 
-    # Remove existing entries for this filename to avoid duplicates
-    for f in list_files(chroma_client):
-        if f["filename"] == safe_name:
-            delete_file(f["file_id"], chroma_client)
-            break
+    dest.write_bytes(content)
 
     try:
         loop = asyncio.get_running_loop()
@@ -252,6 +256,11 @@ async def admin_upload(
     except Exception as exc:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ingestion failed: {exc}") from exc
+
+    # Delete old ChromaDB entry only after new ingestion succeeds
+    if old_entry:
+        delete_file(old_entry["file_id"], chroma_client)
+
     return result
 
 

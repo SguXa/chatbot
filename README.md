@@ -33,7 +33,7 @@ the target server.
 
 1. Open `http://server-ip:3000/admin` in your browser.
 2. Log in with the admin credentials from your `.env` file (default: `admin` / `changeme`).
-3. Drag-and-drop a PDF or Word (.docx) file into the upload zone.
+3. Drag-and-drop a PDF or Word (.docx) file into the upload zone (max 50 MB per file).
 4. Click **Rebuild index** after uploading to make the new content searchable.
 
 The index rebuild typically takes 1–5 minutes depending on document size. The chat UI
@@ -41,9 +41,10 @@ reflects the new knowledge immediately after rebuilding.
 
 ## Updating Documents
 
-1. Upload the new file version via the admin panel.
-2. Delete the old version using the Delete button in the document list.
-3. Click **Rebuild index**.
+Upload the new file version via the admin panel — if a file with the same name already
+exists, it is automatically replaced in the index. No manual deletion required.
+
+Click **Rebuild index** to make the update searchable.
 
 Alternatively, use the reindex button after replacing files — it wipes all vectors and
 re-ingests everything in the documents folder from scratch.
@@ -80,7 +81,7 @@ All configuration lives in `.env` in the project root.
 
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m pytest tests/ -v --tb=short
 ```
 
