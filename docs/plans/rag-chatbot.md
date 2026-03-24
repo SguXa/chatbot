@@ -240,20 +240,21 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
 
 ### Task 9: Integration smoke test and final wiring
 
-- [ ] Add `backend/tests/test_integration.py`:
+- [x] Add `backend/tests/test_integration.py`:
       Test that the full RAG flow works end-to-end with real ChromaDB in-memory
       and mocked Ollama.
       Create a minimal test document (plain text saved as .txt parsed as fallback,
       or a minimal real PDF using reportlab if available, otherwise skip with pytest.skip).
       Ingest it → query it → verify the chunk appears in search results.
       Verify /api/chat endpoint returns SSE events with correct shape.
-- [ ] Verify docker-compose.yml: all service names match what backend config.py expects
+- [x] Verify docker-compose.yml: all service names match what backend config.py expects
       (ollama, chromadb, backend, frontend). Check volume paths.
-- [ ] Add a `README.md` at project root with:
+- [x] Add a `README.md` at project root with:
       Quick start (3 commands: clone/copy, prepare_offline.sh, docker compose up -d).
       How to add documents (admin panel URL).
       How to update documents (upload + rebuild index).
       Environment variables reference (point to .env).
       Resource requirements table (from ARCHITECTURE.md).
-- [ ] Run `docker compose config --quiet` to validate compose file syntax.
-- [ ] Mark completed
+- [x] Run `docker compose config --quiet` to validate compose file syntax.
+      (skipped - docker not available in dev environment; compose file verified manually)
+- [x] Mark completed

@@ -1,0 +1,82 @@
+# Documentation Assistant — Offline RAG Chatbot
+
+Answers questions about your application documentation using local LLMs. Runs fully offline on
+an internal server — no internet connection required at runtime.
+
+## Quick Start
+
+**Step 1** — Download models (run once on a machine with internet access):
+
+```bash
+./scripts/prepare_offline.sh
+```
+
+**Step 2** — Copy the environment file and adjust if needed:
+
+```bash
+cp .env.example .env   # or edit .env directly — defaults work out of the box
+```
+
+**Step 3** — Start all services:
+
+```bash
+docker compose up -d
+```
+
+The chat UI is now available at `http://server-ip:3000`.
+
+To deliver to a client with no internet: archive the entire `chatbot/` folder (including
+`volumes/`) after running `prepare_offline.sh`, then unpack and run `docker compose up -d` on
+the target server.
+
+## Adding Documents
+
+1. Open `http://server-ip:3000/admin` in your browser.
+2. Log in with the admin credentials from your `.env` file (default: `admin` / `changeme`).
+3. Drag-and-drop a PDF or Word (.docx) file into the upload zone.
+4. Click **Rebuild index** after uploading to make the new content searchable.
+
+The index rebuild typically takes 1–5 minutes depending on document size. The chat UI
+reflects the new knowledge immediately after rebuilding.
+
+## Updating Documents
+
+1. Upload the new file version via the admin panel.
+2. Delete the old version using the Delete button in the document list.
+3. Click **Rebuild index**.
+
+Alternatively, use the reindex button after replacing files — it wipes all vectors and
+re-ingests everything in the documents folder from scratch.
+
+## Environment Variables
+
+All configuration lives in `.env` in the project root.
+
+| Variable         | Default                          | Description                               |
+|------------------|----------------------------------|-------------------------------------------|
+| `APP_NAME`       | `Documentation Assistant`        | Displayed in the UI header                |
+| `UI_LANGUAGE`    | `en`                             | UI label language (`en` or `de`)          |
+| `LLM_MODEL`      | `qwen2.5:7b-instruct-q4_K_M`     | Ollama model used for generating answers  |
+| `EMBED_MODEL`    | `multilingual-e5-large`          | Ollama model used for embeddings          |
+| `CHUNK_SIZE`     | `500`                            | Approximate token size per chunk          |
+| `CHUNK_OVERLAP`  | `50`                             | Overlap tokens between adjacent chunks   |
+| `TOP_K`          | `3`                              | Number of chunks retrieved per question  |
+| `ADMIN_USER`     | `admin`                          | Admin panel username                      |
+| `ADMIN_PASSWORD` | `changeme`                       | Admin panel password — change before use  |
+| `OLLAMA_URL`     | `http://ollama:11434`            | Internal Ollama service URL (do not change) |
+| `CHROMA_URL`     | `http://chromadb:8001`           | Internal ChromaDB service URL (do not change) |
+
+## Resource Requirements
+
+| Resource       | Estimate                                             |
+|----------------|------------------------------------------------------|
+| RAM            | ~8 GB total (~6 GB for models, ~2 GB for services)   |
+| Disk           | ~6 GB for models + variable for documents and index  |
+| CPU            | ~100% on 1–2 cores during generation (~10–15 tok/s)  |
+| Response time  | 10–20 seconds for a typical question                 |
+| Minimum server | 32 GB RAM recommended; 16 GB usable minimum          |
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full design decisions, API contract, and file
+structure.
