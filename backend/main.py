@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import chromadb
+import chromadb.errors
 import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -333,8 +334,8 @@ async def admin_reindex(
 
     try:
         chroma_client.delete_collection("documents")
-    except Exception:
-        pass
+    except chromadb.errors.NotFoundError:
+        pass  # collection does not exist yet
 
     files_processed = 0
     total_chunks = 0

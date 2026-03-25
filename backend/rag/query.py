@@ -70,12 +70,15 @@ def build_prompt(
             source = f"{source} (page {page})"
         context_parts.append(f"[Source {i}: {source}]\n{chunk['text']}")
 
+    import re
+
     context = "\n\n".join(context_parts)
-    result = system_prompt_template
-    result = result.replace("{app_name}", app_name)
-    result = result.replace("{context}", context)
-    result = result.replace("{question}", question)
-    return result
+    replacements = {"app_name": app_name, "context": context, "question": question}
+    return re.sub(
+        r"\{(app_name|context|question)\}",
+        lambda m: replacements[m.group(1)],
+        system_prompt_template,
+    )
 
 
 async def generate_answer(
