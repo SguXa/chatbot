@@ -248,7 +248,7 @@ async def admin_upload(
         )
 
     safe_name = Path(file.filename).name
-    if not re.match(r'^[\w\-. ]+\.(pdf|docx)$', safe_name, re.IGNORECASE):
+    if not re.match(r'^[A-Za-z0-9_\-. ]+\.(pdf|docx)$', safe_name, re.IGNORECASE):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
     dest = DOCUMENTS_DIR / safe_name
     content = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -284,12 +284,8 @@ async def admin_upload(
             dest.write_bytes(old_file_bytes)
         else:
             dest.unlink(missing_ok=True)
-        # Clean up old ChromaDB vectors so they don't remain orphaned
-        if old_entry:
-            try:
-                delete_file(old_entry["file_id"], chroma_client)
-            except Exception:
-                logger.warning("Failed to delete old entry %s during zero-chunk rollback", old_entry["file_id"])
+        # Do NOT delete old_entry here — the old file was restored on disk,
+        # so its vectors remain valid and searchable.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No text could be extracted from the file.",
@@ -349,6 +345,7 @@ async def admin_reindex(
 
     files_processed = 0
     total_chunks = 0
+    failed_files = 0
     loop = asyncio.get_running_loop()
     for path in DOCUMENTS_DIR.iterdir():
         if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS:
@@ -360,6 +357,13 @@ async def admin_reindex(
                 total_chunks += result["chunks_created"]
             except Exception as exc:
                 logger.warning("Failed to ingest %s: %s", path.name, exc)
+                failed_files += 1
+
+    if files_processed == 0 and failed_files > 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Reindex failed: all files failed to ingest. The index has been cleared.",
+        )
 
     return {
         "files_processed": files_processed,
