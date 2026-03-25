@@ -31,7 +31,12 @@ def sample_docx(tmp_path) -> Path:
 
 @pytest.fixture
 def chroma_client():
-    return chromadb.EphemeralClient()
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    return client
 
 
 @pytest.fixture
@@ -207,3 +212,30 @@ def test_chat_endpoint_sources_contain_filename(app_client, chroma_client, sampl
     assert done_event is not None
     filenames = [s["filename"] for s in done_event["sources"]]
     assert any("manual.docx" in fn for fn in filenames)
+
+
+def test_chat_connection_error_yields_error_event(app_client, chroma_client, sample_docx):
+    """ConnectionError from generate_answer is surfaced as an SSE error event."""
+    from rag.ingest import ingest_file
+
+    ingest_file(sample_docx, chroma_client, dummy_embed)
+
+    async def _raise_connection_error(*args, **kwargs):
+        raise ConnectionError("Ollama not available")
+        yield  # noqa: unreachable — makes this an async generator
+
+    with (
+        patch("main.get_embedding", new=AsyncMock(return_value=DUMMY_EMBEDDING)),
+        patch("main.generate_answer", new=_raise_connection_error),
+    ):
+        resp = app_client.post("/api/chat", json={"question": "hello"})
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(events) == 1
+    assert events[0].get("done") is True
+    assert "error" in events[0]

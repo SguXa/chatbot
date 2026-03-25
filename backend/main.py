@@ -261,12 +261,6 @@ async def admin_upload(
     old_file_bytes = dest.read_bytes() if dest.exists() else None
     dest.write_bytes(content)
 
-    def _restore_on_failure():
-        if old_file_bytes is not None:
-            dest.write_bytes(old_file_bytes)
-        else:
-            dest.unlink(missing_ok=True)
-
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -274,11 +268,17 @@ async def admin_upload(
         )
     except Exception as exc:
         logger.exception("Ingest failed for %s", safe_name)
-        _restore_on_failure()
+        if old_file_bytes is not None:
+            dest.write_bytes(old_file_bytes)
+        else:
+            dest.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ingestion failed. Check server logs.") from exc
 
     if result["chunks_created"] == 0:
-        _restore_on_failure()
+        if old_file_bytes is not None:
+            dest.write_bytes(old_file_bytes)
+        else:
+            dest.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No text could be extracted from the file.",

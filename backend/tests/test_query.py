@@ -25,7 +25,12 @@ SYSTEM_PROMPT = (
 
 @pytest.fixture
 def chroma():
-    return chromadb.EphemeralClient()
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    return client
 
 
 @pytest.fixture
@@ -46,11 +51,6 @@ def chroma_with_docs(chroma):
         ],
     )
     return chroma
-
-
-@pytest.fixture
-def dummy_embed():
-    return lambda text: [0.1, 0.2, 0.3, 0.4]
 
 
 # ---------------------------------------------------------------------------

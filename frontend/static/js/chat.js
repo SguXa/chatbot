@@ -188,20 +188,6 @@
         }
       }
 
-      // Flush remaining buffer
-      if (buffer.startsWith('data:')) {
-        const payload = buffer.slice(5).trim();
-        if (payload) {
-          try {
-            const event = JSON.parse(payload);
-            if (event.error) { botMessage.bubble.textContent = 'Error: ' + event.error; }
-            else if (event.token) botMessage.bubble.textContent += event.token;
-            if (event.done && !event.error) renderSources(botMessage.sources, event.sources);
-            scrollBottom();
-          } catch (_) { /* ignore */ }
-        }
-      }
-
     } catch (err) {
       hideTyping();
       if (!botMessage) {

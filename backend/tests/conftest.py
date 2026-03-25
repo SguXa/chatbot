@@ -10,7 +10,12 @@ from config import settings
 
 @pytest.fixture
 def mock_chroma():
-    return chromadb.EphemeralClient()
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    return client
 
 
 @pytest.fixture
@@ -30,6 +35,11 @@ def test_client(mock_chroma, tmp_path, monkeypatch):
 
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client
+
+
+@pytest.fixture
+def dummy_embed():
+    return lambda text: [0.1, 0.2, 0.3, 0.4]
 
 
 @pytest.fixture

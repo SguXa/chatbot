@@ -23,7 +23,9 @@ docker compose config --quiet
 
 ## Architecture Decisions
 
-- Ingest pipeline (`ingest_file`) is synchronous and runs in `loop.run_in_executor(None, ...)` to avoid blocking the async FastAPI event loop. This is load-bearing — do not convert to async without also switching to an async embed function.
+- Ingest pipeline (`ingest_file(filepath, chroma_client, embed_fn, chunk_size, chunk_overlap)`) is synchronous and runs in `loop.run_in_executor(None, ...)` to avoid blocking the async FastAPI event loop. This is load-bearing — do not convert to async without also switching to an async embed function. `chunk_size` and `chunk_overlap` are passed from `settings` at each call site.
+- Upload atomicity: new file bytes are written before ingestion; if ingestion fails the old bytes are restored. Old ChromaDB vectors are only deleted after new ingestion succeeds. If old-entry deletion fails, the index may contain duplicate chunks for that filename until the next reindex.
+- `search_chunks` in production receives a `lambda _: embedding` that ignores its argument and returns a pre-computed embedding from `get_embedding` (async). This avoids running a blocking Ollama call from inside the synchronous `search_chunks`. Do not pass a real sync embed function directly to `search_chunks` from an async context.
 - Basic Auth is implemented in the FastAPI backend (`verify_basic_auth` dependency), NOT in Nginx. Nginx has no auth configuration.
 - ChromaDB collection name is hardcoded as `"documents"` (not configurable via .env).
 - The `embed_fn` callback in `ingest_file` and `search_chunks` is injected to allow test mocking without network calls. In production it always wraps the Ollama HTTP call.

@@ -158,3 +158,43 @@ def test_admin_upload_missing_filename(test_client, admin_headers):
     files = {"file": ("", b"data", "application/pdf")}
     resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
     assert resp.status_code in (400, 422)
+
+
+def test_admin_upload_restores_old_file_on_failure(test_client, admin_headers, tmp_path):
+    """When ingest fails for a re-upload, original file bytes are restored on disk."""
+    import main as main_module
+
+    original_content = b"original pdf bytes"
+    dest = tmp_path / "fail.pdf"
+    dest.write_bytes(original_content)
+
+    with patch("main.ingest_file", side_effect=RuntimeError("embed failed")):
+        files = {"file": ("fail.pdf", b"new content", "application/pdf")}
+        resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+
+    assert resp.status_code == 500
+    assert dest.exists()
+    assert dest.read_bytes() == original_content
+
+
+def test_admin_reindex_clears_existing_collection(
+    test_client, mock_chroma, admin_headers, dummy_embed, tmp_path
+):
+    """Reindex wipes existing collection entries even when no files are on disk."""
+    from docx import Document as DocxDocument
+    from rag.ingest import ingest_file, list_files
+
+    doc_path = tmp_path / "dummy.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Content to be cleared on reindex.")
+    doc.save(str(doc_path))
+    ingest_file(doc_path, mock_chroma, dummy_embed)
+    assert len(list_files(mock_chroma)) == 1
+
+    # Remove the file from disk so reindex ingests nothing
+    doc_path.unlink()
+
+    resp = test_client.post("/api/admin/reindex", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json()["files_processed"] == 0
+    assert list_files(mock_chroma) == []

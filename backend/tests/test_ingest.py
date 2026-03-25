@@ -86,16 +86,13 @@ def make_minimal_docx(text: str, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def chroma():
-    """In-memory ChromaDB client."""
-    return chromadb.EphemeralClient()
-
-
-@pytest.fixture
-def dummy_embed():
-    """Fake embed function returning a fixed 4-dim vector."""
-    def _embed(text: str) -> list[float]:
-        return [0.1, 0.2, 0.3, 0.4]
-    return _embed
+    """In-memory ChromaDB client with a clean 'documents' collection."""
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    return client
 
 
 @pytest.fixture
@@ -123,10 +120,9 @@ def test_parse_pdf_returns_text(pdf_file):
     text, pages = parse_pdf(pdf_file)
     assert isinstance(text, str)
     assert isinstance(pages, dict)
-    # The hand-crafted PDF embeds "Hello PDF world" — verify extraction works
-    assert "Hello" in text or len(text) == 0, (
-        "pdfplumber returned unexpected content; update test PDF if format changed"
-    )
+    assert "Hello" in text
+    assert len(pages) >= 1
+    assert 1 in pages
 
 
 def test_parse_docx_returns_text(docx_file):
@@ -189,3 +185,15 @@ def test_ingest_unsupported_type(tmp_path, chroma, dummy_embed):
     bad_file.write_text("hello")
     with pytest.raises(ValueError, match="Unsupported file type"):
         ingest_file(bad_file, chroma, dummy_embed)
+
+
+def test_ingest_pdf_creates_chunks(pdf_file, chroma, dummy_embed):
+    result = ingest_file(pdf_file, chroma, dummy_embed, chunk_size=500, chunk_overlap=50)
+    assert result["filename"] == "test.pdf"
+    assert result["chunks_created"] >= 1
+    collection = chroma.get_or_create_collection("documents")
+    stored = collection.get(where={"file_id": result["file_id"]}, include=["metadatas"])
+    assert len(stored["ids"]) == result["chunks_created"]
+    for meta in stored["metadatas"]:
+        assert meta["filename"] == "test.pdf"
+        assert meta["page"] >= 1
