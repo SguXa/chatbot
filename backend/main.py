@@ -36,15 +36,20 @@ def load_system_prompt() -> str:
     return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
+_sync_http_client = httpx.Client(timeout=60.0)
+
+
 def _sync_embed(text: str) -> list[float]:
-    """Synchronous embedding via Ollama — used during file ingest."""
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.post(
-            f"{settings.ollama_url}/api/embeddings",
-            json={"model": settings.embed_model, "prompt": text},
-        )
-        resp.raise_for_status()
-        return resp.json()["embedding"]
+    """Synchronous embedding via Ollama — used during file ingest.
+
+    Reuses a module-level httpx.Client to avoid per-chunk TCP overhead.
+    """
+    resp = _sync_http_client.post(
+        f"{settings.ollama_url}/api/embeddings",
+        json={"model": settings.embed_model, "prompt": text},
+    )
+    resp.raise_for_status()
+    return resp.json()["embedding"]
 
 
 def create_chroma_client():
@@ -124,6 +129,7 @@ def verify_basic_auth(request: Request) -> None:
 
 class ChatRequest(BaseModel):
     question: str = Field(..., max_length=2000)
+    history: list[dict] = Field(default_factory=list)
 
 
 @app.post("/api/chat")
@@ -368,5 +374,6 @@ async def admin_reindex(
     return {
         "files_processed": files_processed,
         "total_chunks": total_chunks,
+        "failed_files": failed_files,
         "duration_seconds": round(time.time() - start, 2),
     }

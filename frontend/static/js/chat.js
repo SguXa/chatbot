@@ -143,12 +143,12 @@
         return;
       }
 
-      hideTyping();
       botMessage = createBotMessage();
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let typingHidden = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -170,6 +170,11 @@
             event = JSON.parse(payload);
           } catch (_) {
             continue;
+          }
+
+          if (!typingHidden) {
+            hideTyping();
+            typingHidden = true;
           }
 
           if (event.error) {

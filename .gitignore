@@ -2,8 +2,15 @@
 # ralphex progress logs
 .ralphex/progress/
 
-volumes/
-data/documents/
+volumes/*
+!volumes/ollama/
+!volumes/chromadb/
+volumes/ollama/*
+!volumes/ollama/.gitkeep
+volumes/chromadb/*
+!volumes/chromadb/.gitkeep
+data/documents/*
+!data/documents/.gitkeep
 .env
 __pycache__/
 *.pyc
