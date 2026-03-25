@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Ollama not reachable at startup: %s", exc)
     yield
+    _sync_http_client.close()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -132,7 +133,6 @@ def verify_basic_auth(request: Request) -> None:
 
 class ChatRequest(BaseModel):
     question: str = Field(..., max_length=2000)
-    history: list[dict] = Field(default_factory=list)
 
 
 @app.post("/api/chat")
@@ -268,8 +268,7 @@ async def admin_upload(
     if chroma_client is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
-    if safe_name not in _upload_locks:
-        _upload_locks[safe_name] = asyncio.Lock()
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
     async with _upload_locks[safe_name]:
         # Remember old entry (if any) before overwriting — so we can clean up after success
         old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)

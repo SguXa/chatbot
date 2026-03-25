@@ -160,12 +160,12 @@ def test_admin_upload_missing_filename(test_client, admin_headers):
     assert resp.status_code in (400, 422)
 
 
-def test_admin_upload_restores_old_file_on_failure(test_client, admin_headers, tmp_path):
+def test_admin_upload_restores_old_file_on_failure(test_client, admin_headers):
     """When ingest fails for a re-upload, original file bytes are restored on disk."""
     import main as main_module
 
     original_content = b"original pdf bytes"
-    dest = tmp_path / "fail.pdf"
+    dest = main_module.DOCUMENTS_DIR / "fail.pdf"
     dest.write_bytes(original_content)
 
     with patch("main.ingest_file", side_effect=RuntimeError("embed failed")):

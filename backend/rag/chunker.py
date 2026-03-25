@@ -77,7 +77,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
         prev_tail = chunks[i - 1][-overlap_chars:] if len(chunks[i - 1]) > overlap_chars else chunks[i - 1]
         # Trim to the next word boundary so the overlap doesn't start mid-word
         space_idx = prev_tail.find(" ")
-        if space_idx > 0:
+        if space_idx >= 0:
             prev_tail = prev_tail[space_idx + 1:]
         result.append(prev_tail + " " + chunks[i])
 
