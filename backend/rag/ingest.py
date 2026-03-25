@@ -70,6 +70,7 @@ def ingest_file(
             offset = end + 2  # account for \n\n separator
 
     overlap_chars = chunk_overlap * 4
+    page_search_start = 0  # advance monotonically to avoid matching earlier repeated text
     for chunk_index, chunk_text_val in enumerate(chunks):
         # Determine page number for PDF chunks
         page = None
@@ -79,8 +80,10 @@ def ingest_file(
             # the previous chunk.
             skip = overlap_chars if chunk_index > 0 else 0
             search_text = chunk_text_val[skip:]
-            pos = full_text.find(search_text[:50]) if len(search_text) >= 50 else full_text.find(search_text)
+            needle = search_text[:50] if len(search_text) >= 50 else search_text
+            pos = full_text.find(needle, page_search_start)
             if pos >= 0:
+                page_search_start = pos  # next chunk must appear at or after this position
                 for start, end, pnum in pdf_page_boundaries:
                     if start <= pos < end:
                         page = pnum

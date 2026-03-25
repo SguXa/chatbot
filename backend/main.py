@@ -112,7 +112,7 @@ def verify_basic_auth(request: Request) -> None:
         )
     valid_user = hmac.compare_digest(username, settings.admin_user)
     valid_pass = hmac.compare_digest(password, settings.admin_password)
-    if not (valid_user and valid_pass):
+    if not (valid_user & valid_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -280,6 +280,12 @@ async def admin_upload(
             dest.write_bytes(old_file_bytes)
         else:
             dest.unlink(missing_ok=True)
+        # Clean up old ChromaDB vectors so they don't remain orphaned
+        if old_entry:
+            try:
+                delete_file(old_entry["file_id"], chroma_client)
+            except Exception:
+                logger.warning("Failed to delete old entry %s during zero-chunk rollback", old_entry["file_id"])
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No text could be extracted from the file.",
