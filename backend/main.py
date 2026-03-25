@@ -3,6 +3,7 @@ import asyncio
 import base64
 import hmac
 import json
+import re
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -112,7 +113,8 @@ def verify_basic_auth(request: Request) -> None:
         )
     valid_user = hmac.compare_digest(username, settings.admin_user)
     valid_pass = hmac.compare_digest(password, settings.admin_password)
-    if not (valid_user & valid_pass):
+    # Both compare_digest calls are already evaluated above; short-circuit is not a concern here.
+    if not (valid_user and valid_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -246,6 +248,8 @@ async def admin_upload(
         )
 
     safe_name = Path(file.filename).name
+    if not re.match(r'^[\w\-. ]+\.(pdf|docx)$', safe_name, re.IGNORECASE):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
     dest = DOCUMENTS_DIR / safe_name
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:

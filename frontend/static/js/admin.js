@@ -3,24 +3,19 @@
 // ── Credential helpers ──────────────────────────────────────────────────────
 
 function getCredentials() {
-  const username = sessionStorage.getItem('admin_username');
-  const password = sessionStorage.getItem('admin_password');
-  if (!username || !password) return null;
-  return { username, password };
+  return sessionStorage.getItem('admin_auth');
 }
 
 function saveCredentials(username, password) {
-  sessionStorage.setItem('admin_username', username);
-  sessionStorage.setItem('admin_password', password);
+  sessionStorage.setItem('admin_auth', btoa(username + ':' + password));
 }
 
 function clearCredentials() {
-  sessionStorage.removeItem('admin_username');
-  sessionStorage.removeItem('admin_password');
+  sessionStorage.removeItem('admin_auth');
 }
 
-function buildAuthHeader(creds) {
-  return 'Basic ' + btoa(creds.username + ':' + creds.password);
+function buildAuthHeader(auth) {
+  return 'Basic ' + auth;
 }
 
 // ── Login modal ─────────────────────────────────────────────────────────────
@@ -55,7 +50,7 @@ loginForm.addEventListener('submit', async (e) => {
 
   // Test credentials with a lightweight request
   const resp = await fetch('/api/admin/documents', {
-    headers: { Authorization: buildAuthHeader({ username, password }) }
+    headers: { Authorization: 'Basic ' + btoa(username + ':' + password) }
   });
 
   if (resp.ok || resp.status === 404) {
