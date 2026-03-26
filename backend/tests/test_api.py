@@ -177,6 +177,48 @@ def test_admin_upload_restores_old_file_on_failure(test_client, admin_headers):
     assert dest.read_bytes() == original_content
 
 
+def test_admin_upload_returns_422_when_no_text_extracted(test_client, admin_headers):
+    """Upload returns 422 when ingest succeeds but extracts zero chunks."""
+    with patch("main.ingest_file", return_value={"filename": "empty.pdf", "chunks_created": 0, "file_id": "x"}):
+        files = {"file": ("empty.pdf", b"%PDF-1.4", "application/pdf")}
+        resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+    assert resp.status_code == 422
+    assert "No text" in resp.json()["detail"]
+
+
+def test_admin_upload_rejects_filename_with_semicolon(test_client, admin_headers):
+    """Upload rejects filenames containing shell-special characters like semicolons."""
+    files = {"file": ("report;rm.pdf", b"%PDF-1.4", "application/pdf")}
+    resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+    assert resp.status_code == 400
+
+
+def test_admin_upload_rejects_filename_with_special_chars(test_client, admin_headers):
+    """Upload rejects filenames containing characters outside the allowed set."""
+    files = {"file": ("report[final].pdf", b"%PDF-1.4", "application/pdf")}
+    resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+    assert resp.status_code == 400
+
+
+def test_admin_delete_removes_file_from_disk(test_client, mock_chroma, admin_headers, dummy_embed, tmp_path):
+    """Deleting a document via the API removes the file from disk."""
+    import main as main_module
+    from docx import Document as DocxDocument
+    from rag.ingest import ingest_file
+
+    doc_path = main_module.DOCUMENTS_DIR / "todelete.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("This file should be removed on delete.")
+    doc.save(str(doc_path))
+    result = ingest_file(doc_path, mock_chroma, dummy_embed)
+
+    resp = test_client.delete(
+        f"/api/admin/documents/{result['file_id']}", headers=admin_headers
+    )
+    assert resp.status_code == 200
+    assert not doc_path.exists(), "File was not removed from disk after delete"
+
+
 def test_admin_reindex_clears_existing_collection(
     test_client, mock_chroma, admin_headers, dummy_embed, tmp_path
 ):

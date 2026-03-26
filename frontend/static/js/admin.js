@@ -318,9 +318,12 @@ async function reindexAll() {
 
     if (resp.ok) {
       const data = await resp.json();
-      reindexStatus.textContent =
-        `Done — ${data.files_processed} files, ${data.total_chunks} chunks (${data.duration_seconds.toFixed(1)}s)`;
-      setTimeout(() => reindexProgress.classList.add('hidden'), 3000);
+      let msg = `Done — ${data.files_processed} files, ${data.total_chunks} chunks (${data.duration_seconds.toFixed(1)}s)`;
+      if (data.failed_files > 0) {
+        msg += ` — WARNING: ${data.failed_files} file(s) failed to ingest (check server logs)`;
+      }
+      reindexStatus.textContent = msg;
+      setTimeout(() => reindexProgress.classList.add('hidden'), data.failed_files > 0 ? 6000 : 3000);
       await loadDocuments();
     } else {
       const body = await resp.json().catch(() => ({}));

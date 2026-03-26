@@ -56,16 +56,12 @@ def app_client(chroma_client, tmp_path, monkeypatch):
         yield client
 
 
-def dummy_embed(text: str) -> list[float]:
-    return DUMMY_EMBEDDING
-
-
 # ---------------------------------------------------------------------------
 # Ingest / search / delete
 # ---------------------------------------------------------------------------
 
 
-def test_ingest_docx_and_search(sample_docx, chroma_client):
+def test_ingest_docx_and_search(sample_docx, chroma_client, dummy_embed):
     """Ingest a DOCX and verify chunks are stored and retrievable."""
     from rag.ingest import ingest_file
     from rag.query import search_chunks
@@ -84,7 +80,7 @@ def test_ingest_docx_and_search(sample_docx, chroma_client):
     assert any("manual.docx" in c["filename"] for c in chunks)
 
 
-def test_ingest_then_delete_removes_chunks(sample_docx, chroma_client):
+def test_ingest_then_delete_removes_chunks(sample_docx, chroma_client, dummy_embed):
     """After delete_file, the document should no longer appear in list_files."""
     from rag.ingest import delete_file, ingest_file, list_files
 
@@ -98,7 +94,7 @@ def test_ingest_then_delete_removes_chunks(sample_docx, chroma_client):
     assert not any(f["file_id"] == file_id for f in list_files(chroma_client))
 
 
-def test_ingest_multiple_files(tmp_path, chroma_client):
+def test_ingest_multiple_files(tmp_path, chroma_client, dummy_embed):
     """Ingesting two files yields independent file_ids and correct chunk counts."""
     from rag.ingest import ingest_file, list_files
 
@@ -123,7 +119,7 @@ def test_ingest_multiple_files(tmp_path, chroma_client):
 # ---------------------------------------------------------------------------
 
 
-def test_ingest_pdf_if_reportlab_available(tmp_path, chroma_client):
+def test_ingest_pdf_if_reportlab_available(tmp_path, chroma_client, dummy_embed):
     """Ingest a minimal PDF created with reportlab; skip if reportlab not installed."""
     try:
         from reportlab.pdfgen import canvas as rl_canvas  # noqa: F401
@@ -156,7 +152,7 @@ async def _fake_generate(*args, **kwargs):
         yield token
 
 
-def test_chat_endpoint_sse_shape(app_client, chroma_client, sample_docx):
+def test_chat_endpoint_sse_shape(app_client, chroma_client, sample_docx, dummy_embed):
     """POST /api/chat returns SSE events with correct structure."""
     from rag.ingest import ingest_file
 
@@ -187,7 +183,7 @@ def test_chat_endpoint_sse_shape(app_client, chroma_client, sample_docx):
     assert isinstance(done_events[0]["sources"], list)
 
 
-def test_chat_endpoint_sources_contain_filename(app_client, chroma_client, sample_docx):
+def test_chat_endpoint_sources_contain_filename(app_client, chroma_client, sample_docx, dummy_embed):
     """Sources in the done event should reference the ingested document."""
     from rag.ingest import ingest_file
 
@@ -214,7 +210,7 @@ def test_chat_endpoint_sources_contain_filename(app_client, chroma_client, sampl
     assert any("manual.docx" in fn for fn in filenames)
 
 
-def test_chat_connection_error_yields_error_event(app_client, chroma_client, sample_docx):
+def test_chat_connection_error_yields_error_event(app_client, chroma_client, sample_docx, dummy_embed):
     """ConnectionError from generate_answer is surfaced as an SSE error event."""
     from rag.ingest import ingest_file
 

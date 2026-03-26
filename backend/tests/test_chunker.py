@@ -29,25 +29,39 @@ def test_chunk_size_respected():
 
 
 def test_overlap_applied():
-    # Build text large enough to produce at least 2 chunks
-    sentence = "The quick brown fox jumps over the lazy dog. "
-    text = sentence * 20  # plenty of text
-    result = chunk_text(text, 20, 5)  # chunk_size=20 (~80 chars), overlap=5 (~20 chars)
+    # Build text large enough to produce at least 2 chunks.
+    # Use distinct words so that a word appearing in the tail of chunk 0 cannot
+    # also appear in chunk 1 by coincidence.
+    words = [f"word{i}" for i in range(200)]
+    text = " ".join(words)
+    result = chunk_text(text, 10, 5)  # chunk_size=10 (~40 chars), overlap=5 (~20 chars)
     assert len(result) >= 2
-    # The second chunk should begin with words from the tail of the first chunk.
-    # Overlap is word-boundary trimmed, so check for a word that appears near the
-    # end of the first chunk rather than an exact prefix match.
-    first_tail_words = result[0].split()[-3:]
-    assert any(word in result[1] for word in first_tail_words)
+    # The tail of chunk 0 must appear verbatim at the start of chunk 1 (after
+    # word-boundary trimming by the overlap logic).
+    overlap_chars = 5 * 4  # 5 tokens * 4 chars/token
+    raw_tail = result[0][-overlap_chars:]
+    # trim to next word boundary (same logic as chunker)
+    space_idx = raw_tail.find(" ")
+    expected_prefix = raw_tail[space_idx + 1:] if space_idx >= 0 else raw_tail
+    assert result[1].startswith(expected_prefix), (
+        f"chunk[1] does not start with overlap tail.\n"
+        f"expected prefix: {expected_prefix!r}\n"
+        f"chunk[1] start:  {result[1][:len(expected_prefix) + 20]!r}"
+    )
 
 
 def test_no_overlap_when_zero():
-    sentence = "Hello world. " * 30
-    result = chunk_text(sentence, 20, 0)
+    # Use distinct words so there is no accidental repetition between chunks.
+    words = [f"tok{i}" for i in range(200)]
+    text = " ".join(words)
+    result = chunk_text(text, 10, 0)
     assert len(result) >= 2
-    # With overlap=0, the second chunk must not begin with the explicit tail of the first
-    first_tail = result[0][-5:]
-    assert not result[1].startswith(first_tail)
+    # With overlap=0 the last word of chunk 0 must NOT appear at the start of chunk 1.
+    last_word_of_chunk0 = result[0].split()[-1]
+    first_word_of_chunk1 = result[1].split()[0]
+    assert last_word_of_chunk0 != first_word_of_chunk1, (
+        f"Overlap=0 but chunk[1] starts with the last word of chunk[0]: {last_word_of_chunk0!r}"
+    )
 
 
 def test_multi_paragraph():

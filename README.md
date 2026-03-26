@@ -34,6 +34,10 @@ the target server.
 1. Open `http://server-ip:3000/admin` in your browser.
 2. Log in with the admin credentials from your `.env` file (default: `admin` / `changeme`).
 3. Drag-and-drop a PDF or Word (.docx) file into the upload zone (max 50 MB per file).
+   Filenames must contain only letters, digits, spaces, hyphens, underscores, and dots
+   (e.g. `my-report_v2.pdf`). Files with special characters, accented letters, or brackets
+   in the name must be renamed before uploading.
+   Scanned image-only PDFs cannot be indexed — the file must contain selectable text.
 4. Click **Rebuild index** after uploading to make the new content searchable.
 
 The index rebuild typically takes 1–5 minutes depending on document size. The chat UI
@@ -87,5 +91,5 @@ python -m pytest tests/ -v --tb=short
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full design decisions, API contract, and file
-structure.
+See [CLAUDE.md](CLAUDE.md) for architecture decisions, build/test commands, and key
+configuration notes.
