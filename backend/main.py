@@ -330,7 +330,7 @@ async def admin_delete_document(
 
     delete_file(file_id, chroma_client)
 
-    filepath = DOCUMENTS_DIR / target["filename"]
+    filepath = DOCUMENTS_DIR / Path(target["filename"]).name
     if filepath.exists():
         filepath.unlink()
 

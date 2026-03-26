@@ -201,6 +201,7 @@
         botMessage.bubble.textContent += '\n[Connection lost]';
       }
     } finally {
+      hideTyping();
       setInputDisabled(false);
       input.focus();
     }
