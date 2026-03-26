@@ -1,0 +1,472 @@
+"""FastAPI application entry point — RAG chatbot backend."""
+import asyncio
+import base64
+import hmac
+import json
+import re
+import logging
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import urlparse
+
+import chromadb
+import chromadb.errors
+import httpx
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from config import settings
+from rag.ingest import delete_file, ingest_file, list_files
+from rag.query import build_prompt, generate_answer, get_embedding, search_chunks
+
+logger = logging.getLogger(__name__)
+
+DOCUMENTS_DIR = Path("/app/documents")
+SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.txt"
+ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+# Per-filename locks to prevent concurrent uploads of the same file from racing.
+_upload_locks: dict[str, asyncio.Lock] = {}
+# Global lock to prevent concurrent reindex operations and upload/reindex races.
+_reindex_lock: asyncio.Lock = asyncio.Lock()
+
+
+def load_system_prompt() -> str:
+    if not SYSTEM_PROMPT_PATH.exists():
+        raise FileNotFoundError(f"System prompt file not found: {SYSTEM_PROMPT_PATH}")
+    return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+
+
+_sync_http_client = httpx.Client(timeout=60.0)
+
+
+def _sync_embed(text: str) -> list[float]:
+    """Synchronous embedding via Ollama — used during file ingest.
+
+    Reuses a module-level httpx.Client to avoid per-chunk TCP overhead.
+    """
+    resp = _sync_http_client.post(
+        f"{settings.ollama_url}/api/embeddings",
+        json={"model": settings.embed_model, "prompt": text},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if "embedding" not in data:
+        raise ConnectionError(f"Ollama response missing 'embedding' key: {list(data.keys())}")
+    return data["embedding"]
+
+
+def create_chroma_client():
+    parsed = urlparse(settings.chroma_url)
+    host = parsed.hostname
+    port = parsed.port or 8001
+    return chromadb.HttpClient(host=host, port=port)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    if settings.admin_password == "changeme":
+        logger.warning(
+            "SECURITY: admin_password is set to the default value. "
+            "Set ADMIN_PASSWORD in your .env file before deploying."
+        )
+    if not hasattr(app.state, "system_prompt"):
+        try:
+            app.state.system_prompt = load_system_prompt()
+        except FileNotFoundError as exc:
+            logger.error("Cannot start: %s", exc)
+            raise
+    if not hasattr(app.state, "chroma_client"):
+        try:
+            app.state.chroma_client = create_chroma_client()
+        except Exception as exc:
+            logger.warning("ChromaDB not reachable at startup: %s", exc)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.ollama_url}/api/tags")
+            resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("Ollama not reachable at startup: %s", exc)
+    yield
+    _sync_http_client.close()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def verify_basic_auth(request: Request) -> None:
+    """Dependency that validates HTTP Basic Auth against settings."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    valid_user = hmac.compare_digest(username, settings.admin_user)
+    valid_pass = hmac.compare_digest(password, settings.admin_password)
+    # Both compare_digest calls are already evaluated above; short-circuit is not a concern here.
+    if not (valid_user and valid_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
+@app.post("/api/chat")
+async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
+    """Stream an answer to the user's question using RAG."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+    system_prompt = request.app.state.system_prompt
+
+    async def event_stream():
+        try:
+            embedding = await get_embedding(
+                body.question, settings.ollama_url, settings.embed_model
+            )
+            chunks = search_chunks(
+                body.question,
+                chroma_client,
+                lambda _: embedding,
+                settings.top_k,
+            )
+            prompt = build_prompt(
+                body.question, chunks, system_prompt, settings.app_name
+            )
+            seen = set()
+            sources = []
+            for c in chunks:
+                if c.get("filename"):
+                    key = (c["filename"], c["page"])
+                    if key not in seen:
+                        seen.add(key)
+                        sources.append({"filename": c["filename"], "page": c["page"]})
+
+            async for token in generate_answer(
+                prompt, settings.ollama_url, settings.llm_model
+            ):
+                yield f"data: {json.dumps({'token': token, 'done': False})}\n\n"
+
+            yield f"data: {json.dumps({'token': '', 'done': True, 'sources': sources})}\n\n"
+
+        except ConnectionError as exc:
+            yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
+        except Exception:
+            logger.exception("Unhandled error in chat stream")
+            yield f"data: {json.dumps({'error': 'Internal error', 'done': True})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/health")
+async def health(request: Request) -> dict:
+    """Return service health including Ollama and ChromaDB status."""
+    ollama_ok = False
+    chroma_ok = False
+    documents_count = 0
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.ollama_url}/api/tags")
+            ollama_ok = resp.status_code == 200
+    except Exception:
+        pass
+
+    try:
+        chroma_client = getattr(request.app.state, "chroma_client", None)
+        if chroma_client is not None:
+            documents_count = len(list_files(chroma_client))
+            chroma_ok = True
+    except Exception:
+        pass
+
+    return {
+        "status": "ok" if (ollama_ok and chroma_ok) else "degraded",
+        "ollama": ollama_ok,
+        "chromadb": chroma_ok,
+        "documents_count": documents_count,
+        "app_name": settings.app_name,
+        "ui_language": settings.ui_language,
+    }
+
+
+@app.get("/api/admin/documents")
+async def admin_list_documents(
+    request: Request,
+    _: None = Depends(verify_basic_auth),
+) -> list[dict]:
+    """List all indexed documents with metadata."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+    chroma_files = list_files(chroma_client)
+    indexed_names = {f["filename"] for f in chroma_files}
+
+    result = []
+    for f in chroma_files:
+        filepath = DOCUMENTS_DIR / f["filename"]
+        stat = filepath.stat() if filepath.exists() else None
+        result.append(
+            {
+                "file_id": f["file_id"],
+                "filename": f["filename"],
+                "chunks": f["chunks"],
+                "size": stat.st_size if stat else None,
+                "uploaded_at": int(stat.st_mtime * 1000) if stat else None,
+            }
+        )
+
+    # Include disk files not present in ChromaDB (e.g. after a partial reindex failure)
+    for path in DOCUMENTS_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS and path.name not in indexed_names:
+            stat = path.stat()
+            result.append(
+                {
+                    "file_id": None,
+                    "filename": path.name,
+                    "chunks": 0,
+                    "size": stat.st_size,
+                    "uploaded_at": int(stat.st_mtime * 1000),
+                }
+            )
+
+    return result
+
+
+@app.post("/api/admin/upload")
+async def admin_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    _: None = Depends(verify_basic_auth),
+) -> dict:
+    """Upload a PDF or DOCX file and ingest it into the vector store."""
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required.")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type '{suffix}'. Only .pdf and .docx are allowed.",
+        )
+
+    safe_name = Path(file.filename).name
+    if not re.match(r'^[A-Za-z0-9_\-. ]+\.(pdf|docx)$', safe_name, re.IGNORECASE):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename.")
+    dest = DOCUMENTS_DIR / safe_name
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="File exceeds 50 MB limit.")
+
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Collect all existing entries for this filename — there may be more than one
+            # if a previous upload left orphaned vectors when old-entry deletion failed.
+            # All are deleted after successful ingestion so duplicates do not accumulate.
+            old_entries = [f for f in list_files(chroma_client) if f["filename"] == safe_name]
+
+            # Preserve old file bytes so we can restore them if ingestion fails
+            old_file_bytes = dest.read_bytes() if dest.exists() else None
+            try:
+                dest.write_bytes(content)
+            except OSError as exc:
+                logger.exception("Failed to write %s to disk", safe_name)
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write file to disk.") from exc
+
+            try:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
+                )
+            except Exception as exc:
+                logger.exception("Ingest failed for %s", safe_name)
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ingestion failed. Check server logs.") from exc
+
+            if result["chunks_created"] == 0:
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                # Do NOT delete old_entry here — the old file was restored on disk,
+                # so its vectors remain valid and searchable.
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="No text could be extracted from the file.",
+                )
+
+            # Delete all old ChromaDB entries only after new ingestion succeeds
+            for old_entry in old_entries:
+                try:
+                    delete_file(old_entry["file_id"], chroma_client)
+                except Exception:
+                    logger.warning("Failed to delete old entry %s for %s; index may contain duplicates", old_entry["file_id"], safe_name)
+
+    return result
+
+
+@app.delete("/api/admin/documents/{file_id}")
+async def admin_delete_document(
+    file_id: str,
+    request: Request,
+    _: None = Depends(verify_basic_auth),
+) -> dict:
+    """Delete a document and all its chunks from the vector store."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+
+    # Resolve filename before acquiring lock (lock key requires knowing the filename).
+    files = list_files(chroma_client)
+    target = next((f for f in files if f["file_id"] == file_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    safe_name = Path(target["filename"]).name
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Re-verify the entry still exists after acquiring the lock; a concurrent
+            # upload may have replaced or removed it.
+            files_now = list_files(chroma_client)
+            if not any(f["file_id"] == file_id for f in files_now):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+            delete_file(file_id, chroma_client)
+
+            # Only delete the disk file if no other Chroma entry still references
+            # this filename (duplicate file_ids can exist when old-vector cleanup
+            # fails during a re-upload). Use files_now (captured before delete) to
+            # avoid an extra ChromaDB scan: if the only entry for safe_name was the
+            # one we just deleted, none remain.
+            if not any(f["filename"] == safe_name and f["file_id"] != file_id for f in files_now):
+                filepath = DOCUMENTS_DIR / safe_name
+                if filepath.exists():
+                    filepath.unlink()
+
+    return {"deleted": file_id}
+
+
+@app.delete("/api/admin/orphans/{filename}")
+async def admin_delete_orphan(
+    filename: str,
+    request: Request,
+    _: None = Depends(verify_basic_auth),
+) -> dict:
+    """Delete a disk file that has no ChromaDB index entry (orphaned after a failed reindex)."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Verify the file is genuinely unindexed under the lock.
+            files_now = list_files(chroma_client)
+            if any(f["filename"] == safe_name for f in files_now):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="File is indexed; use the standard delete endpoint instead.",
+                )
+            filepath = DOCUMENTS_DIR / safe_name
+            if not filepath.exists():
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+            if filepath.suffix.lower() not in ALLOWED_EXTENSIONS:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type")
+            filepath.unlink()
+
+    return {"deleted": safe_name}
+
+
+@app.post("/api/admin/reindex")
+async def admin_reindex(
+    request: Request,
+    _: None = Depends(verify_basic_auth),
+) -> dict:
+    """Rebuild the entire vector index from files on disk."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+    start = time.time()
+
+    async with _reindex_lock:
+        try:
+            chroma_client.delete_collection("documents")
+        except chromadb.errors.NotFoundError:
+            pass  # collection does not exist yet
+
+        files_processed = 0
+        total_chunks = 0
+        failed_files = 0
+        loop = asyncio.get_running_loop()
+        for path in DOCUMENTS_DIR.iterdir():
+            if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS:
+                try:
+                    result = await loop.run_in_executor(
+                        None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
+                    )
+                    if result["chunks_created"] == 0:
+                        logger.warning("No text extracted from %s; skipping", path.name)
+                        failed_files += 1
+                    else:
+                        files_processed += 1
+                        total_chunks += result["chunks_created"]
+                except Exception as exc:
+                    logger.warning("Failed to ingest %s: %s", path.name, exc)
+                    failed_files += 1
+
+        if files_processed == 0 and failed_files > 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Reindex failed: all files failed to ingest. The index has been cleared.",
+            )
+
+        return {
+            "files_processed": files_processed,
+            "total_chunks": total_chunks,
+            "failed_files": failed_files,
+            "duration_seconds": round(time.time() - start, 2),
+        }

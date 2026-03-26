@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Panel — Documentation Assistant</title>
+  <link rel="stylesheet" href="/css/main.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body class="admin-body">
+
+  <!-- Login modal -->
+  <div class="modal-overlay hidden" id="loginModal">
+    <div class="modal">
+      <h2 class="modal-title">Admin Login</h2>
+      <p class="modal-desc">Enter your credentials to access the admin panel.</p>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="usernameInput">Username</label>
+          <input type="text" id="usernameInput" autocomplete="username" placeholder="admin" />
+        </div>
+        <div class="form-group">
+          <label for="passwordInput">Password</label>
+          <input type="password" id="passwordInput" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <p class="login-error hidden" id="loginError">Invalid credentials. Please try again.</p>
+        <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+      </form>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="header-inner header-inner--wide">
+      <div class="header-left">
+        <span class="app-name">Documentation Assistant</span>
+        <span class="admin-badge">Admin</span>
+      </div>
+      <div class="header-right">
+        <a href="/" class="btn btn-ghost">Back to chat</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <h1 class="page-title">Admin Panel</h1>
+
+    <!-- Stats row -->
+    <div class="stats-row" id="statsRow">
+      <div class="stat-card">
+        <div class="stat-value" id="statDocuments">—</div>
+        <div class="stat-label">Documents</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statChunks">—</div>
+        <div class="stat-label">Chunks</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statLastIndexed">—</div>
+        <div class="stat-label">Last uploaded</div>
+      </div>
+    </div>
+
+    <!-- Upload section -->
+    <section class="admin-section">
+      <h2 class="section-title">Upload document</h2>
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">📄</div>
+        <p class="drop-zone-text">Drag &amp; drop a PDF or DOCX file here</p>
+        <p class="drop-zone-hint">or</p>
+        <label class="btn btn-secondary" for="fileInput">Browse file</label>
+        <input type="file" id="fileInput" accept=".pdf,.docx" class="hidden" />
+      </div>
+      <div class="upload-progress hidden" id="uploadProgress">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <span class="upload-status-text" id="uploadStatusText">Uploading…</span>
+      </div>
+    </section>
+
+    <!-- Documents table -->
+    <section class="admin-section">
+      <div class="section-header">
+        <h2 class="section-title">Documents</h2>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Refresh list">↻ Refresh</button>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="doc-table" id="docTable">
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>Size</th>
+              <th>Chunks</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="docTableBody">
+            <tr class="empty-row" id="emptyRow">
+              <td colspan="5">No documents indexed yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Rebuild index -->
+    <section class="admin-section admin-section--footer">
+      <div class="reindex-area">
+        <div>
+          <h2 class="section-title">Rebuild index</h2>
+          <p class="section-desc">Re-ingest all documents in the documents folder from scratch.</p>
+        </div>
+        <button class="btn btn-danger" id="reindexBtn">Rebuild index</button>
+      </div>
+      <div class="reindex-progress hidden" id="reindexProgress">
+        <span class="spinner"></span>
+        <span id="reindexStatus">Rebuilding index…</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
