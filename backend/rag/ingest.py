@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+import chromadb.errors
 import pdfplumber
 from docx import Document
 
@@ -119,7 +120,10 @@ def ingest_file(
 
 def delete_file(file_id: str, chroma_client) -> None:
     """Remove all chunks for a given file_id from ChromaDB."""
-    collection = chroma_client.get_or_create_collection("documents")
+    try:
+        collection = chroma_client.get_collection("documents")
+    except chromadb.errors.NotFoundError:
+        return
     results = collection.get(where={"file_id": file_id})
     if results and results["ids"]:
         collection.delete(ids=results["ids"])
@@ -127,7 +131,10 @@ def delete_file(file_id: str, chroma_client) -> None:
 
 def list_files(chroma_client) -> list[dict]:
     """Return unique files with chunk counts from ChromaDB."""
-    collection = chroma_client.get_or_create_collection("documents")
+    try:
+        collection = chroma_client.get_collection("documents")
+    except chromadb.errors.NotFoundError:
+        return []
     results = collection.get(include=["metadatas"])
 
     files: dict[str, dict] = {}

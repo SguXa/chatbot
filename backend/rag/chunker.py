@@ -68,17 +68,39 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     if current_parts:
         chunks.append(" ".join(current_parts))
 
-    # Apply overlap: prepend the last overlap_chars of previous chunk to next chunk
+    # Apply overlap: prepend the last overlap_chars of previous chunk to next chunk,
+    # capping the prefix so the combined chunk stays within char_limit.
     if overlap_chars <= 0 or len(chunks) <= 1:
         return chunks
 
     result = [chunks[0]]
     for i in range(1, len(chunks)):
-        prev_tail = chunks[i - 1][-overlap_chars:] if len(chunks[i - 1]) > overlap_chars else chunks[i - 1]
-        # Trim to the next word boundary so the overlap doesn't start mid-word
-        space_idx = prev_tail.find(" ")
+        chunk = chunks[i]
+        # Take overlap_chars from the previous chunk's tail; trim partial word at start
+        raw_tail = chunks[i - 1][-overlap_chars:] if len(chunks[i - 1]) > overlap_chars else chunks[i - 1]
+        space_idx = raw_tail.find(" ")
         if space_idx >= 0:
-            prev_tail = prev_tail[space_idx + 1:]
-        result.append(prev_tail + " " + chunks[i])
+            raw_tail = raw_tail[space_idx + 1:]
+        if raw_tail:
+            combined = raw_tail + " " + chunk
+            if len(combined) > char_limit:
+                # Trim the prefix so the combined chunk stays within char_limit.
+                allowed = char_limit - len(chunk) - 1
+                if allowed > 0:
+                    raw_tail = raw_tail[-allowed:]
+                    # Trim partial word at the new start
+                    space_idx = raw_tail.find(" ")
+                    if space_idx >= 0:
+                        raw_tail = raw_tail[space_idx + 1:]
+                    if raw_tail:
+                        result.append(raw_tail + " " + chunk)
+                    else:
+                        result.append(chunk)
+                else:
+                    result.append(chunk)
+            else:
+                result.append(combined)
+        else:
+            result.append(chunk)
 
     return result

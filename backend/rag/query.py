@@ -1,8 +1,8 @@
 """Query pipeline: embedding, chunk search, prompt building, and answer streaming."""
 import json
-import re
 from typing import AsyncGenerator, Callable
 
+import chromadb.errors
 import httpx
 
 
@@ -35,16 +35,20 @@ def search_chunks(
     Returns list of {text, filename, page, score}.
     """
     embedding = embed_fn(question)
-    collection = chroma_client.get_or_create_collection("documents")
-    count = collection.count()
-    if count == 0:
+    try:
+        collection = chroma_client.get_or_create_collection("documents")
+        count = collection.count()
+        if count == 0:
+            return []
+        actual_k = min(top_k, count)
+        results = collection.query(
+            query_embeddings=[embedding],
+            n_results=actual_k,
+            include=["documents", "metadatas", "distances"],
+        )
+    except chromadb.errors.NotFoundError:
+        # Collection was deleted (e.g. mid-reindex) — treat as no documents indexed.
         return []
-    actual_k = min(top_k, count)
-    results = collection.query(
-        query_embeddings=[embedding],
-        n_results=actual_k,
-        include=["documents", "metadatas", "distances"],
-    )
 
     chunks = []
     docs = results.get("documents") or [[]]
@@ -74,16 +78,16 @@ def build_prompt(
     for i, chunk in enumerate(chunks, start=1):
         source = chunk.get("filename", "unknown")
         page = chunk.get("page")
-        if page:
+        if page is not None and page != 0:
             source = f"{source} (page {page})"
         context_parts.append(f"[Source {i}: {source}]\n{chunk['text']}")
 
     context = "\n\n".join(context_parts)
-    replacements = {"app_name": app_name, "context": context, "question": question}
-    return re.sub(
-        r"\{(app_name|context|question)\}",
-        lambda m: replacements[m.group(1)],
-        system_prompt_template,
+    return (
+        system_prompt_template
+        .replace("{app_name}", app_name)
+        .replace("{context}", context)
+        .replace("{question}", question)
     )
 
 

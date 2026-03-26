@@ -66,7 +66,7 @@ loginForm.addEventListener('submit', async (e) => {
     headers: { Authorization: 'Basic ' + encoded }
   });
 
-  if (resp.ok || resp.status === 404) {
+  if (resp.ok) {
     saveCredentials(username, password);
     hideLoginModal();
     if (pendingAuthResolve) {

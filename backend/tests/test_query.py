@@ -35,11 +35,7 @@ def chroma():
 
 @pytest.fixture
 def chroma_with_docs(chroma):
-    """ChromaDB client pre-loaded with two chunks (collection reset for isolation)."""
-    try:
-        chroma.delete_collection("documents")
-    except Exception:
-        pass
+    """ChromaDB client pre-loaded with two chunks."""
     collection = chroma.get_or_create_collection("documents")
     collection.add(
         ids=["chunk_0", "chunk_1"],
