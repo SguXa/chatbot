@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from config import settings
-from rag.ingest import delete_file, ingest_file, list_files
+from rag.ingest import ParseError, delete_file, ingest_file, list_files
 from rag.query import build_prompt, generate_answer, get_embedding, search_chunks
 
 logger = logging.getLogger(__name__)
@@ -82,10 +82,28 @@ async def lifespan(app: FastAPI):
             logger.error("Cannot start: %s", exc)
             raise
     if not hasattr(app.state, "chroma_client"):
-        try:
-            app.state.chroma_client = create_chroma_client()
-        except Exception as exc:
-            logger.warning("ChromaDB not reachable at startup: %s", exc)
+        _CHROMA_RETRY_ATTEMPTS = 10
+        _CHROMA_RETRY_DELAY = 3.0
+        for attempt in range(1, _CHROMA_RETRY_ATTEMPTS + 1):
+            try:
+                app.state.chroma_client = create_chroma_client()
+                break
+            except Exception as exc:
+                if attempt == _CHROMA_RETRY_ATTEMPTS:
+                    logger.warning(
+                        "ChromaDB not reachable after %d attempts: %s",
+                        _CHROMA_RETRY_ATTEMPTS,
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "ChromaDB not reachable (attempt %d/%d): %s. Retrying in %.0fs...",
+                        attempt,
+                        _CHROMA_RETRY_ATTEMPTS,
+                        exc,
+                        _CHROMA_RETRY_DELAY,
+                    )
+                    await asyncio.sleep(_CHROMA_RETRY_DELAY)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{settings.ollama_url}/api/tags")
@@ -314,6 +332,13 @@ async def admin_upload(
                 result = await loop.run_in_executor(
                     None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
                 )
+            except ParseError as exc:
+                logger.warning("Parse error for %s: %s", safe_name, exc)
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
             except Exception as exc:
                 logger.exception("Ingest failed for %s", safe_name)
                 if old_file_bytes is not None:
