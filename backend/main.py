@@ -54,7 +54,10 @@ def _sync_embed(text: str) -> list[float]:
         json={"model": settings.embed_model, "prompt": text},
     )
     resp.raise_for_status()
-    return resp.json()["embedding"]
+    data = resp.json()
+    if "embedding" not in data:
+        raise ConnectionError(f"Ollama response missing 'embedding' key: {list(data.keys())}")
+    return data["embedding"]
 
 
 def create_chroma_client():

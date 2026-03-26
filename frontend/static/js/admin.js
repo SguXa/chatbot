@@ -74,6 +74,7 @@ loginForm.addEventListener('submit', async (e) => {
       pendingAuthResolve = null;
     }
   } else if (resp.status === 401) {
+    loginError.textContent = 'Invalid credentials. Please try again.';
     loginError.classList.remove('hidden');
   } else {
     // Server error (e.g. 503 ChromaDB unavailable) — credentials validity unknown

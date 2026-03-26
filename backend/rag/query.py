@@ -15,7 +15,10 @@ async def get_embedding(text: str, ollama_url: str, model: str) -> list[float]:
                 json={"model": model, "prompt": text},
             )
             response.raise_for_status()
-            return response.json()["embedding"]
+            data = response.json()
+            if "embedding" not in data:
+                raise ConnectionError(f"Ollama response missing 'embedding' key: {list(data.keys())}")
+            return data["embedding"]
     except httpx.TimeoutException as exc:
         raise ConnectionError(f"Ollama request timed out at {ollama_url}") from exc
     except httpx.HTTPStatusError as exc:
@@ -83,11 +86,13 @@ def build_prompt(
         context_parts.append(f"[Source {i}: {source}]\n{chunk['text']}")
 
     context = "\n\n".join(context_parts)
+    # Expand {app_name} and {question} before {context} so that document content
+    # containing literal "{question}" is not substituted by the final .replace call.
     return (
         system_prompt_template
         .replace("{app_name}", app_name)
-        .replace("{context}", context)
         .replace("{question}", question)
+        .replace("{context}", context)
     )
 
 
