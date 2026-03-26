@@ -189,9 +189,14 @@ function renderDocuments(docs) {
     tdActions.style.textAlign = 'right';
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-icon';
-    delBtn.title = 'Delete';
     delBtn.textContent = '🗑';
-    delBtn.addEventListener('click', () => deleteDocument(doc.file_id, doc.filename));
+    if (doc.file_id) {
+      delBtn.title = 'Delete';
+      delBtn.addEventListener('click', () => deleteDocument(doc.file_id, doc.filename));
+    } else {
+      delBtn.title = 'Delete unindexed file from disk';
+      delBtn.addEventListener('click', () => deleteOrphan(doc.filename));
+    }
     tdActions.appendChild(delBtn);
 
     tr.append(tdName, tdSize, tdChunks, tdStatus, tdActions);
@@ -222,6 +227,23 @@ async function deleteDocument(fileId, filename) {
   if (!confirm(`Delete "${label}" and all its vectors? This cannot be undone.`)) return;
 
   const resp = await authFetch('/api/admin/documents/' + encodeURIComponent(fileId), {
+    method: 'DELETE'
+  });
+
+  if (!resp) return;
+
+  if (resp.ok) {
+    await loadDocuments();
+  } else {
+    const body = await resp.json().catch(() => ({}));
+    alert('Delete failed: ' + (body.detail || resp.status));
+  }
+}
+
+async function deleteOrphan(filename) {
+  if (!confirm(`Delete unindexed file "${filename}" from disk? This cannot be undone.`)) return;
+
+  const resp = await authFetch('/api/admin/orphans/' + encodeURIComponent(filename), {
     method: 'DELETE'
   });
 

@@ -227,10 +227,11 @@ async def admin_list_documents(
     chroma_client = getattr(request.app.state, "chroma_client", None)
     if chroma_client is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
-    files = list_files(chroma_client)
+    chroma_files = list_files(chroma_client)
+    indexed_names = {f["filename"] for f in chroma_files}
 
     result = []
-    for f in files:
+    for f in chroma_files:
         filepath = DOCUMENTS_DIR / f["filename"]
         stat = filepath.stat() if filepath.exists() else None
         result.append(
@@ -242,6 +243,21 @@ async def admin_list_documents(
                 "uploaded_at": int(stat.st_mtime * 1000) if stat else None,
             }
         )
+
+    # Include disk files not present in ChromaDB (e.g. after a partial reindex failure)
+    for path in DOCUMENTS_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS and path.name not in indexed_names:
+            stat = path.stat()
+            result.append(
+                {
+                    "file_id": None,
+                    "filename": path.name,
+                    "chunks": 0,
+                    "size": stat.st_size,
+                    "uploaded_at": int(stat.st_mtime * 1000),
+                }
+            )
+
     return result
 
 
@@ -370,6 +386,41 @@ async def admin_delete_document(
     return {"deleted": file_id}
 
 
+@app.delete("/api/admin/orphans/{filename}")
+async def admin_delete_orphan(
+    filename: str,
+    request: Request,
+    _: None = Depends(verify_basic_auth),
+) -> dict:
+    """Delete a disk file that has no ChromaDB index entry (orphaned after a failed reindex)."""
+    chroma_client = getattr(request.app.state, "chroma_client", None)
+    if chroma_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
+
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Verify the file is genuinely unindexed under the lock.
+            files_now = list_files(chroma_client)
+            if any(f["filename"] == safe_name for f in files_now):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="File is indexed; use the standard delete endpoint instead.",
+                )
+            filepath = DOCUMENTS_DIR / safe_name
+            if not filepath.exists():
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+            if filepath.suffix.lower() not in ALLOWED_EXTENSIONS:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type")
+            filepath.unlink()
+
+    return {"deleted": safe_name}
+
+
 @app.post("/api/admin/reindex")
 async def admin_reindex(
     request: Request,
@@ -397,8 +448,12 @@ async def admin_reindex(
                     result = await loop.run_in_executor(
                         None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
                     )
-                    files_processed += 1
-                    total_chunks += result["chunks_created"]
+                    if result["chunks_created"] == 0:
+                        logger.warning("No text extracted from %s; skipping", path.name)
+                        failed_files += 1
+                    else:
+                        files_processed += 1
+                        total_chunks += result["chunks_created"]
                 except Exception as exc:
                     logger.warning("Failed to ingest %s: %s", path.name, exc)
                     failed_files += 1

@@ -50,6 +50,23 @@ docker compose exec ollama ollama pull "$EMBED_MODEL"
 echo "Stopping Ollama service..."
 docker compose stop ollama
 
+echo "Pulling chromadb image..."
+docker compose pull chromadb
+
+echo "Building backend and frontend images..."
+docker compose build backend frontend
+
+echo "Saving Docker images to images.tar..."
+docker save \
+  ollama/ollama:latest \
+  chromadb/chroma:latest \
+  chatbot-backend:latest \
+  chatbot-frontend:latest \
+  -o images.tar
+
 echo ""
-echo "Done. Models are stored in ./volumes/ollama/"
-echo "Archive the chatbot/ directory and deliver to the client."
+echo "Done."
+echo "  - Models are stored in ./volumes/ollama/"
+echo "  - Docker images are saved to ./images.tar"
+echo "Archive the chatbot/ directory (including images.tar and volumes/) and deliver to the client."
+echo "On the target server, run: docker load < images.tar  then  docker compose up -d"

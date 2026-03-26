@@ -304,6 +304,43 @@ def test_admin_reindex_all_fail_returns_500(test_client, admin_headers):
     assert "all files failed" in resp.json()["detail"].lower()
 
 
+def test_admin_reindex_zero_chunks_counted_as_failure(test_client, admin_headers):
+    """Reindex counts zero-chunk results as failed files, not processed files."""
+    import main as main_module
+
+    docs_dir = main_module.DOCUMENTS_DIR
+    (docs_dir / "good.pdf").write_bytes(b"placeholder")
+    (docs_dir / "image_only.pdf").write_bytes(b"placeholder")
+
+    def fake_ingest(path, *args, **kwargs):
+        if path.name == "image_only.pdf":
+            return {"filename": path.name, "chunks_created": 0, "file_id": "y"}
+        return {"filename": path.name, "chunks_created": 5, "file_id": "x"}
+
+    with patch("main.ingest_file", side_effect=fake_ingest):
+        resp = test_client.post("/api/admin/reindex", headers=admin_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["files_processed"] == 1
+    assert data["failed_files"] == 1
+
+
+def test_admin_documents_includes_disk_only_files(test_client, admin_headers):
+    """Documents list includes files on disk that are not indexed in ChromaDB."""
+    import main as main_module
+
+    (main_module.DOCUMENTS_DIR / "unindexed.pdf").write_bytes(b"some pdf bytes")
+
+    resp = test_client.get("/api/admin/documents", headers=admin_headers)
+    assert resp.status_code == 200
+    docs = resp.json()
+    unindexed = [d for d in docs if d["filename"] == "unindexed.pdf"]
+    assert len(unindexed) == 1
+    assert unindexed[0]["file_id"] is None
+    assert unindexed[0]["chunks"] == 0
+
+
 def test_admin_reindex_clears_existing_collection(
     test_client, mock_chroma, admin_headers, dummy_embed, tmp_path
 ):

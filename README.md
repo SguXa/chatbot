@@ -33,9 +33,14 @@ docker compose up -d
 
 The chat UI is now available at `http://server-ip:3000`.
 
-To deliver to a client with no internet: archive the entire `chatbot/` folder (including
-`volumes/`) after running `prepare_offline.sh`, then unpack and run `docker compose up -d` on
-the target server.
+To deliver to a client with no internet: run `prepare_offline.sh` on a machine with internet
+access — it pulls the Ollama models and saves all Docker images to `images.tar`. Then archive
+the entire `chatbot/` folder (including `volumes/` and `images.tar`). On the target server:
+
+```bash
+docker load < images.tar
+docker compose up -d
+```
 
 ## Adding Documents
 
