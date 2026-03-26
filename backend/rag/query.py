@@ -36,7 +36,7 @@ def search_chunks(
     """
     embedding = embed_fn(question)
     try:
-        collection = chroma_client.get_or_create_collection("documents")
+        collection = chroma_client.get_collection("documents")
         count = collection.count()
         if count == 0:
             return []
@@ -86,8 +86,8 @@ def build_prompt(
     return (
         system_prompt_template
         .replace("{app_name}", app_name)
-        .replace("{question}", question)
         .replace("{context}", context)
+        .replace("{question}", question)
     )
 
 
