@@ -82,17 +82,6 @@ def make_minimal_docx(text: str, tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def chroma():
-    """In-memory ChromaDB client with a clean 'documents' collection."""
-    client = chromadb.EphemeralClient()
-    try:
-        client.delete_collection("documents")
-    except Exception:
-        pass
-    return client
-
-
-@pytest.fixture
 def pdf_file(tmp_path):
     content = make_minimal_pdf("Hello PDF world. This is a test document.")
     p = tmp_path / "test.pdf"

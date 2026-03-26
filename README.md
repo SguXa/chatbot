@@ -11,6 +11,14 @@ an internal server — no internet connection required at runtime.
 ./scripts/prepare_offline.sh
 ```
 
+To pull different models, set `LLM_MODEL` and/or `EMBED_MODEL` before running the script:
+
+```bash
+LLM_MODEL=llama3.1:8b EMBED_MODEL=nomic-embed-text ./scripts/prepare_offline.sh
+```
+
+These values must match the corresponding variables in `.env`.
+
 **Step 2** — Copy the environment file and adjust if needed:
 
 ```bash

@@ -220,6 +220,90 @@ def test_admin_delete_removes_file_from_disk(test_client, mock_chroma, admin_hea
     assert not doc_path.exists(), "File was not removed from disk after delete"
 
 
+def test_admin_list_503_when_no_chroma(test_client, admin_headers):
+    """List endpoint returns 503 when ChromaDB is unavailable."""
+    import main as main_module
+    original = main_module.app.state.chroma_client
+    try:
+        del main_module.app.state.chroma_client
+        resp = test_client.get("/api/admin/documents", headers=admin_headers)
+        assert resp.status_code == 503
+    finally:
+        main_module.app.state.chroma_client = original
+
+
+def test_admin_upload_503_when_no_chroma(test_client, admin_headers):
+    """Upload endpoint returns 503 when ChromaDB is unavailable."""
+    import main as main_module
+    original = main_module.app.state.chroma_client
+    try:
+        del main_module.app.state.chroma_client
+        files = {"file": ("test.pdf", b"%PDF-1.4", "application/pdf")}
+        resp = test_client.post("/api/admin/upload", files=files, headers=admin_headers)
+        assert resp.status_code == 503
+    finally:
+        main_module.app.state.chroma_client = original
+
+
+def test_admin_delete_503_when_no_chroma(test_client, admin_headers):
+    """Delete endpoint returns 503 when ChromaDB is unavailable."""
+    import main as main_module
+    original = main_module.app.state.chroma_client
+    try:
+        del main_module.app.state.chroma_client
+        resp = test_client.delete("/api/admin/documents/some-id", headers=admin_headers)
+        assert resp.status_code == 503
+    finally:
+        main_module.app.state.chroma_client = original
+
+
+def test_admin_reindex_503_when_no_chroma(test_client, admin_headers):
+    """Reindex endpoint returns 503 when ChromaDB is unavailable."""
+    import main as main_module
+    original = main_module.app.state.chroma_client
+    try:
+        del main_module.app.state.chroma_client
+        resp = test_client.post("/api/admin/reindex", headers=admin_headers)
+        assert resp.status_code == 503
+    finally:
+        main_module.app.state.chroma_client = original
+
+
+def test_admin_reindex_partial_failure_returns_200(test_client, admin_headers):
+    """Reindex with one success and one failure returns 200 with failed_files=1."""
+    import main as main_module
+
+    docs_dir = main_module.DOCUMENTS_DIR
+    (docs_dir / "good.docx").write_bytes(b"placeholder")
+    (docs_dir / "bad.docx").write_bytes(b"placeholder")
+
+    def fake_ingest(path, *args, **kwargs):
+        if path.name == "bad.docx":
+            raise RuntimeError("ingest failed")
+        return {"filename": path.name, "chunks_created": 3, "file_id": "abc123"}
+
+    with patch("main.ingest_file", side_effect=fake_ingest):
+        resp = test_client.post("/api/admin/reindex", headers=admin_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["files_processed"] == 1
+    assert data["failed_files"] == 1
+
+
+def test_admin_reindex_all_fail_returns_500(test_client, admin_headers):
+    """Reindex where every eligible file fails returns 500."""
+    import main as main_module
+
+    (main_module.DOCUMENTS_DIR / "fail.docx").write_bytes(b"placeholder")
+
+    with patch("main.ingest_file", side_effect=RuntimeError("always fails")):
+        resp = test_client.post("/api/admin/reindex", headers=admin_headers)
+
+    assert resp.status_code == 500
+    assert "all files failed" in resp.json()["detail"].lower()
+
+
 def test_admin_reindex_clears_existing_collection(
     test_client, mock_chroma, admin_headers, dummy_embed, tmp_path
 ):

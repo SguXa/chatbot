@@ -9,6 +9,17 @@ from config import settings
 
 
 @pytest.fixture
+def chroma():
+    """In-memory ChromaDB client with a clean 'documents' collection."""
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    return client
+
+
+@pytest.fixture
 def mock_chroma():
     client = chromadb.EphemeralClient()
     try:

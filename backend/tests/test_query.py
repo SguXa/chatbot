@@ -24,16 +24,6 @@ SYSTEM_PROMPT = (
 
 
 @pytest.fixture
-def chroma():
-    client = chromadb.EphemeralClient()
-    try:
-        client.delete_collection("documents")
-    except Exception:
-        pass
-    return client
-
-
-@pytest.fixture
 def chroma_with_docs(chroma):
     """ChromaDB client pre-loaded with two chunks."""
     collection = chroma.get_or_create_collection("documents")
@@ -115,6 +105,16 @@ def test_build_prompt_no_format_injection():
     assert "MyApp" in prompt
 
 
+def test_build_prompt_question_context_injection():
+    """User question containing '{context}' must not expand into retrieved context."""
+    chunks = [{"text": "Actual context text.", "filename": "doc.pdf", "page": 1}]
+    prompt = build_prompt("What is {context}?", chunks, SYSTEM_PROMPT)
+    # The sanitized form should appear in the prompt, not the raw {context}
+    assert "What is [context]?" in prompt
+    # The actual context block should still be present, not substituted by the question text
+    assert "Actual context text." in prompt
+
+
 # ---------------------------------------------------------------------------
 # search_chunks
 # ---------------------------------------------------------------------------
@@ -145,6 +145,13 @@ def test_search_chunks_filename_populated(chroma_with_docs, dummy_embed):
     results = search_chunks("Q", chroma_with_docs, dummy_embed, top_k=2)
     for r in results:
         assert r["filename"] == "science.pdf"
+
+
+def test_search_chunks_top_k_larger_than_count(chroma_with_docs, dummy_embed):
+    """search_chunks clamps top_k to the collection size to avoid ChromaDB errors."""
+    # chroma_with_docs has 2 documents; requesting more must not raise and returns at most 2
+    results = search_chunks("anything", chroma_with_docs, dummy_embed, top_k=100)
+    assert len(results) == 2
 
 
 def test_search_chunks_empty_collection_returns_empty(dummy_embed):
@@ -181,6 +188,45 @@ async def test_get_embedding_calls_ollama():
     mock_client.post.assert_called_once()
     call_kwargs = mock_client.post.call_args
     assert "/api/embeddings" in call_kwargs[0][0]
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_missing_key_raises():
+    """ConnectionError is raised when Ollama response lacks the 'embedding' key."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"model": "some-model"}  # no 'embedding' key
+
+    with patch("rag.query.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(ConnectionError, match="missing 'embedding' key"):
+            await get_embedding("hello", "http://ollama:11434", "model")
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_http_status_error_raises():
+    """ConnectionError is raised when Ollama returns an HTTP error status."""
+    import httpx as _httpx
+
+    mock_response = MagicMock()
+    mock_response.status_code = 503
+
+    with patch("rag.query.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(
+            side_effect=_httpx.HTTPStatusError(
+                "error", request=MagicMock(), response=mock_response
+            )
+        )
+
+        with pytest.raises(ConnectionError, match="503"):
+            await get_embedding("hello", "http://ollama:11434", "model")
 
 
 # ---------------------------------------------------------------------------
