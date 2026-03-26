@@ -276,3 +276,37 @@ async def test_generate_answer_raises_on_http_error():
         with pytest.raises(ConnectionError, match="500"):
             async for _ in generate_answer("prompt", "http://ollama:11434", "model"):
                 pass
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_raises_on_truncated_stream():
+    """Stream that closes without a done=true line raises ConnectionError."""
+    lines = [
+        json.dumps({"response": "Hello", "done": False}),
+        json.dumps({"response": " world", "done": False}),
+        # no done=true line — simulates server crash / abrupt close
+    ]
+
+    async def fake_aiter_lines():
+        for line in lines:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_lines = fake_aiter_lines
+
+    mock_stream_ctx = MagicMock()
+    mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    mock_client = MagicMock()
+    mock_client.stream = MagicMock(return_value=mock_stream_ctx)
+
+    mock_client_ctx = MagicMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("rag.query.httpx.AsyncClient", return_value=mock_client_ctx):
+        with pytest.raises(ConnectionError, match="done"):
+            async for _ in generate_answer("prompt", "http://ollama:11434", "model"):
+                pass

@@ -113,6 +113,7 @@ async def generate_answer(
                 json={"model": model, "prompt": prompt, "stream": True},
             ) as response:
                 response.raise_for_status()
+                done_received = False
                 async for line in response.aiter_lines():
                     if not line:
                         continue
@@ -124,7 +125,12 @@ async def generate_answer(
                     if token:
                         yield token
                     if data.get("done", False):
+                        done_received = True
                         break
+                if not done_received:
+                    raise ConnectionError(
+                        f"Ollama stream ended without 'done' signal at {ollama_url}"
+                    )
     except httpx.TimeoutException as exc:
         raise ConnectionError(f"Ollama request timed out at {ollama_url}") from exc
     except httpx.HTTPStatusError as exc:
