@@ -31,6 +31,8 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 # Per-filename locks to prevent concurrent uploads of the same file from racing.
 _upload_locks: dict[str, asyncio.Lock] = {}
+# Global lock to prevent concurrent reindex operations and upload/reindex races.
+_reindex_lock: asyncio.Lock = asyncio.Lock()
 
 
 def load_system_prompt() -> str:
@@ -322,17 +324,26 @@ async def admin_delete_document(
     if chroma_client is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
-    # Resolve filename before deletion
+    # Resolve filename before acquiring lock (lock key requires knowing the filename).
     files = list_files(chroma_client)
     target = next((f for f in files if f["file_id"] == file_id), None)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    delete_file(file_id, chroma_client)
+    safe_name = Path(target["filename"]).name
+    _upload_locks.setdefault(safe_name, asyncio.Lock())
+    async with _upload_locks[safe_name]:
+        # Re-verify the entry still exists after acquiring the lock; a concurrent
+        # upload may have replaced or removed it.
+        files_now = list_files(chroma_client)
+        if not any(f["file_id"] == file_id for f in files_now):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    filepath = DOCUMENTS_DIR / Path(target["filename"]).name
-    if filepath.exists():
-        filepath.unlink()
+        delete_file(file_id, chroma_client)
+
+        filepath = DOCUMENTS_DIR / safe_name
+        if filepath.exists():
+            filepath.unlink()
 
     return {"deleted": file_id}
 
@@ -348,36 +359,37 @@ async def admin_reindex(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
     start = time.time()
 
-    try:
-        chroma_client.delete_collection("documents")
-    except chromadb.errors.NotFoundError:
-        pass  # collection does not exist yet
+    async with _reindex_lock:
+        try:
+            chroma_client.delete_collection("documents")
+        except chromadb.errors.NotFoundError:
+            pass  # collection does not exist yet
 
-    files_processed = 0
-    total_chunks = 0
-    failed_files = 0
-    loop = asyncio.get_running_loop()
-    for path in DOCUMENTS_DIR.iterdir():
-        if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS:
-            try:
-                result = await loop.run_in_executor(
-                    None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
-                )
-                files_processed += 1
-                total_chunks += result["chunks_created"]
-            except Exception as exc:
-                logger.warning("Failed to ingest %s: %s", path.name, exc)
-                failed_files += 1
+        files_processed = 0
+        total_chunks = 0
+        failed_files = 0
+        loop = asyncio.get_running_loop()
+        for path in DOCUMENTS_DIR.iterdir():
+            if path.is_file() and path.suffix.lower() in ALLOWED_EXTENSIONS:
+                try:
+                    result = await loop.run_in_executor(
+                        None, ingest_file, path, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
+                    )
+                    files_processed += 1
+                    total_chunks += result["chunks_created"]
+                except Exception as exc:
+                    logger.warning("Failed to ingest %s: %s", path.name, exc)
+                    failed_files += 1
 
-    if files_processed == 0 and failed_files > 0:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Reindex failed: all files failed to ingest. The index has been cleared.",
-        )
+        if files_processed == 0 and failed_files > 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Reindex failed: all files failed to ingest. The index has been cleared.",
+            )
 
-    return {
-        "files_processed": files_processed,
-        "total_chunks": total_chunks,
-        "failed_files": failed_files,
-        "duration_seconds": round(time.time() - start, 2),
-    }
+        return {
+            "files_processed": files_processed,
+            "total_chunks": total_chunks,
+            "failed_files": failed_files,
+            "duration_seconds": round(time.time() - start, 2),
+        }
