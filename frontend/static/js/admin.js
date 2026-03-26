@@ -76,13 +76,9 @@ loginForm.addEventListener('submit', async (e) => {
   } else if (resp.status === 401) {
     loginError.classList.remove('hidden');
   } else {
-    // Non-auth error — accept credentials anyway and let the caller handle it
-    saveCredentials(username, password);
-    hideLoginModal();
-    if (pendingAuthResolve) {
-      pendingAuthResolve(true);
-      pendingAuthResolve = null;
-    }
+    // Server error (e.g. 503 ChromaDB unavailable) — credentials validity unknown
+    loginError.textContent = 'Server error. Please try again later.';
+    loginError.classList.remove('hidden');
   }
 });
 

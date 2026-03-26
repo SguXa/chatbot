@@ -8,13 +8,20 @@ import httpx
 
 async def get_embedding(text: str, ollama_url: str, model: str) -> list[float]:
     """Call Ollama embeddings API and return the embedding vector."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{ollama_url}/api/embeddings",
-            json={"model": model, "prompt": text},
-        )
-        response.raise_for_status()
-        return response.json()["embedding"]
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{ollama_url}/api/embeddings",
+                json={"model": model, "prompt": text},
+            )
+            response.raise_for_status()
+            return response.json()["embedding"]
+    except httpx.TimeoutException as exc:
+        raise ConnectionError(f"Ollama request timed out at {ollama_url}") from exc
+    except httpx.HTTPStatusError as exc:
+        raise ConnectionError(f"Ollama returned error {exc.response.status_code}") from exc
+    except httpx.TransportError as exc:
+        raise ConnectionError(f"Cannot connect to Ollama at {ollama_url}") from exc
 
 
 def search_chunks(
