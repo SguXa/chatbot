@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -7,6 +8,8 @@ import pdfplumber
 from docx import Document
 
 from rag.chunker import chunk_text
+
+logger = logging.getLogger(__name__)
 
 
 def parse_pdf(path: Path) -> tuple[str, dict[int, str]]:
@@ -90,6 +93,11 @@ def ingest_file(
                         page = pnum
                         break
             if page is None:
+                logger.warning(
+                    "Could not determine page for chunk %d of %s; defaulting to page 1",
+                    chunk_index,
+                    filename,
+                )
                 page = 1
 
         embedding = embed_fn(chunk_text_val)

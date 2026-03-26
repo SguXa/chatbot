@@ -214,6 +214,7 @@ async def health(request: Request) -> dict:
         "chromadb": chroma_ok,
         "documents_count": documents_count,
         "app_name": settings.app_name,
+        "ui_language": settings.ui_language,
     }
 
 
@@ -356,9 +357,10 @@ async def admin_delete_document(
 
             # Only delete the disk file if no other Chroma entry still references
             # this filename (duplicate file_ids can exist when old-vector cleanup
-            # fails during a re-upload).
-            remaining = list_files(chroma_client)
-            if not any(f["filename"] == safe_name for f in remaining):
+            # fails during a re-upload). Use files_now (captured before delete) to
+            # avoid an extra ChromaDB scan: if the only entry for safe_name was the
+            # one we just deleted, none remain.
+            if not any(f["filename"] == safe_name and f["file_id"] != file_id for f in files_now):
                 filepath = DOCUMENTS_DIR / safe_name
                 if filepath.exists():
                     filepath.unlink()

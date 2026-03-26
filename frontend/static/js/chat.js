@@ -17,11 +17,14 @@
       if (!res.ok) throw new Error('non-2xx');
       const data = await res.json();
 
-      // Update app name from health response if present
+      // Update app name and language from health response if present
       if (data.app_name) {
         const appNameEl = document.querySelector('.app-name');
         if (appNameEl) appNameEl.textContent = data.app_name;
         document.title = data.app_name;
+      }
+      if (data.ui_language) {
+        document.documentElement.lang = data.ui_language;
       }
 
       const ok = data.status === 'ok';
@@ -178,7 +181,10 @@
           }
 
           if (event.error) {
-            botMessage.bubble.textContent = 'Error: ' + event.error;
+            const partial = botMessage.bubble.textContent.trim();
+            botMessage.bubble.textContent = partial
+              ? partial + '\n[Error: ' + event.error + ']'
+              : 'Error: ' + event.error;
             botMessage.bubble.classList.add('error-text');
             scrollBottom();
           } else if (event.token) {
