@@ -86,8 +86,8 @@ def build_prompt(
     return (
         system_prompt_template
         .replace("{app_name}", app_name)
-        .replace("{context}", context)
         .replace("{question}", question)
+        .replace("{context}", context)
     )
 
 

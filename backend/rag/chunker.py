@@ -51,8 +51,17 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
                     chunks.append(" ".join(word_buf))
                     word_buf = []
                     word_len = 0
-                word_buf.append(word)
-                word_len += len(word) + 1
+                if len(word) > char_limit:
+                    # Single word exceeds limit; split by character.
+                    if word_buf:
+                        chunks.append(" ".join(word_buf))
+                        word_buf = []
+                        word_len = 0
+                    for i in range(0, len(word), char_limit):
+                        chunks.append(word[i : i + char_limit])
+                else:
+                    word_buf.append(word)
+                    word_len += len(word) + 1
             if word_buf:
                 chunks.append(" ".join(word_buf))
             continue

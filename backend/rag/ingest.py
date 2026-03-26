@@ -139,7 +139,9 @@ def list_files(chroma_client) -> list[dict]:
 
     files: dict[str, dict] = {}
     for meta in results.get("metadatas") or []:
-        fid = meta["file_id"]
+        fid = meta.get("file_id")
+        if fid is None:
+            continue
         if fid not in files:
             files[fid] = {"file_id": fid, "filename": meta["filename"], "chunks": 0}
         files[fid]["chunks"] += 1

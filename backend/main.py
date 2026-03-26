@@ -133,7 +133,7 @@ def verify_basic_auth(request: Request) -> None:
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., max_length=2000)
+    question: str = Field(..., min_length=1, max_length=2000)
 
 
 @app.post("/api/chat")
@@ -343,9 +343,14 @@ async def admin_delete_document(
 
             delete_file(file_id, chroma_client)
 
-            filepath = DOCUMENTS_DIR / safe_name
-            if filepath.exists():
-                filepath.unlink()
+            # Only delete the disk file if no other Chroma entry still references
+            # this filename (duplicate file_ids can exist when old-vector cleanup
+            # fails during a re-upload).
+            remaining = list_files(chroma_client)
+            if not any(f["filename"] == safe_name for f in remaining):
+                filepath = DOCUMENTS_DIR / safe_name
+                if filepath.exists():
+                    filepath.unlink()
 
     return {"deleted": file_id}
 
