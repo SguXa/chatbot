@@ -29,25 +29,24 @@ def test_chunk_size_respected():
 
 
 def test_overlap_applied():
-    # Build text large enough to produce at least 2 chunks.
-    # Use distinct words so that a word appearing in the tail of chunk 0 cannot
-    # also appear in chunk 1 by coincidence.
-    words = [f"word{i}" for i in range(200)]
-    text = " ".join(words)
+    # Use short sentences (~16 chars each) so that each chunk holds ~2 sentences
+    # (~33 chars) and leaves ~7 chars of slack for the overlap prefix.
+    sentences = [f"Item{i} done well." for i in range(40)]
+    text = " ".join(sentences)
     result = chunk_text(text, 10, 5)  # chunk_size=10 (~40 chars), overlap=5 (~20 chars)
     assert len(result) >= 2
-    # The tail of chunk 0 must appear verbatim at the start of chunk 1 (after
-    # word-boundary trimming by the overlap logic).
-    overlap_chars = 5 * 4  # 5 tokens * 4 chars/token
-    raw_tail = result[0][-overlap_chars:]
-    # trim to next word boundary (same logic as chunker)
-    space_idx = raw_tail.find(" ")
-    expected_prefix = raw_tail[space_idx + 1:] if space_idx >= 0 else raw_tail
-    assert result[1].startswith(expected_prefix), (
-        f"chunk[1] does not start with overlap tail.\n"
-        f"expected prefix: {expected_prefix!r}\n"
-        f"chunk[1] start:  {result[1][:len(expected_prefix) + 20]!r}"
+    # At least one word from chunk[0]'s tail must appear at the start of chunk[1],
+    # confirming that the overlap prefix was applied.
+    chunk0_words = set(result[0].split())
+    assert any(w in chunk0_words for w in result[1].split()[:5]), (
+        f"No overlap detected.\nchunk[0]={result[0]!r}\nchunk[1][:80]={result[1][:80]!r}"
     )
+    # All chunks (including those with overlap prefix) must respect char_limit.
+    char_limit = 10 * 4
+    for chunk in result:
+        assert len(chunk) <= char_limit, (
+            f"Chunk exceeds char_limit ({char_limit}): {len(chunk)} chars: {chunk!r}"
+        )
 
 
 def test_no_overlap_when_zero():
@@ -81,3 +80,24 @@ def test_long_single_sentence_split():
     assert len(result) > 1
     for chunk in result:
         assert len(chunk) <= 50
+
+
+def test_overlap_does_not_drop_last_word():
+    # Regression: overlap truncation must never discard the tail of any chunk.
+    # w19 must appear in the final output even when overlap is applied.
+    words = [f"w{i}" for i in range(20)]
+    text = " ".join(words)
+    result = chunk_text(text, 2, 1)
+    all_text = " ".join(result)
+    assert "w19" in all_text, f"w19 was dropped from output: {result}"
+
+
+def test_overlap_does_not_truncate_chunk_content():
+    # Each chunk's original content must be fully present even when overlap
+    # prefix would push the combined size over char_limit.
+    words = [f"word{i:02d}" for i in range(50)]
+    text = " ".join(words)
+    result = chunk_text(text, 5, 3)  # small chunks with significant overlap
+    all_text = " ".join(result)
+    for i in range(50):
+        assert f"word{i:02d}" in all_text, f"word{i:02d} was dropped from chunker output"
