@@ -87,7 +87,7 @@ def ingest_file(
             needle = search_text[:50] if len(search_text) >= 50 else search_text
             pos = full_text.find(needle, page_search_start)
             if pos >= 0:
-                page_search_start = pos + len(needle)  # advance past the matched text
+                page_search_start = pos + len(search_text)  # advance past the full chunk
                 for start, end, pnum in pdf_page_boundaries:
                     if start <= pos < end:
                         page = pnum
