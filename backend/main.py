@@ -276,8 +276,10 @@ async def admin_upload(
     _upload_locks.setdefault(safe_name, asyncio.Lock())
     async with _reindex_lock:
         async with _upload_locks[safe_name]:
-            # Remember old entry (if any) before overwriting — so we can clean up after success
-            old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)
+            # Collect all existing entries for this filename — there may be more than one
+            # if a previous upload left orphaned vectors when old-entry deletion failed.
+            # All are deleted after successful ingestion so duplicates do not accumulate.
+            old_entries = [f for f in list_files(chroma_client) if f["filename"] == safe_name]
 
             # Preserve old file bytes so we can restore them if ingestion fails
             old_file_bytes = dest.read_bytes() if dest.exists() else None
@@ -316,8 +318,8 @@ async def admin_upload(
                     detail="No text could be extracted from the file.",
                 )
 
-            # Delete old ChromaDB entry only after new ingestion succeeds
-            if old_entry:
+            # Delete all old ChromaDB entries only after new ingestion succeeds
+            for old_entry in old_entries:
                 try:
                     delete_file(old_entry["file_id"], chroma_client)
                 except Exception:
