@@ -7,12 +7,12 @@ function getCredentials() {
 }
 
 function saveCredentials(username, password) {
-  try {
-    sessionStorage.setItem('admin_auth', btoa(username + ':' + password));
-  } catch (e) {
-    // btoa throws for characters outside Latin-1 (non-ASCII passwords)
+  // Restrict to ASCII (0–127): btoa accepts Latin-1 (0–255) without throwing,
+  // but the backend decodes credentials as UTF-8, so bytes 128–255 cause a 401.
+  if (!/^[\x00-\x7F]*$/.test(username + ':' + password)) {
     throw new Error('Username and password must contain only ASCII characters.');
   }
+  sessionStorage.setItem('admin_auth', btoa(username + ':' + password));
 }
 
 function clearCredentials() {
@@ -54,14 +54,14 @@ loginForm.addEventListener('submit', async (e) => {
   if (!username || !password) return;
 
   // Test credentials with a lightweight request
-  let encoded;
-  try {
-    encoded = btoa(username + ':' + password);
-  } catch (e) {
+  // Restrict to ASCII (0–127): btoa accepts Latin-1 without throwing but the
+  // backend decodes as UTF-8, so bytes 128–255 would cause a silent 401.
+  if (!/^[\x00-\x7F]*$/.test(username + ':' + password)) {
     loginError.textContent = 'Username and password must contain only ASCII characters.';
     loginError.classList.remove('hidden');
     return;
   }
+  const encoded = btoa(username + ':' + password);
   const resp = await fetch('/api/admin/documents', {
     headers: { Authorization: 'Basic ' + encoded }
   });

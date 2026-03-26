@@ -14,6 +14,7 @@ import chromadb
 import chromadb.errors
 import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -91,6 +92,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def verify_basic_auth(request: Request) -> None:
@@ -299,9 +307,6 @@ async def admin_upload(
                 delete_file(old_entry["file_id"], chroma_client)
             except Exception:
                 logger.warning("Failed to delete old entry %s for %s; index may contain duplicates", old_entry["file_id"], safe_name)
-
-    # Remove the lock entry once it is no longer held so the dict does not grow without bound.
-    _upload_locks.pop(safe_name, None)
 
     return result
 
