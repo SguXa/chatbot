@@ -88,10 +88,12 @@ def build_prompt(
     context = "\n\n".join(context_parts)
     # Expand {app_name} and {question} before {context} so that document content
     # containing literal "{question}" is not substituted by the final .replace call.
+    # Sanitize question so a user-supplied "{context}" cannot expand into retrieved text.
+    safe_question = question.replace("{context}", "[context]")
     return (
         system_prompt_template
         .replace("{app_name}", app_name)
-        .replace("{question}", question)
+        .replace("{question}", safe_question)
         .replace("{context}", context)
     )
 
