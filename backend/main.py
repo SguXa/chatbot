@@ -270,45 +270,46 @@ async def admin_upload(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ChromaDB not available")
 
     _upload_locks.setdefault(safe_name, asyncio.Lock())
-    async with _upload_locks[safe_name]:
-        # Remember old entry (if any) before overwriting — so we can clean up after success
-        old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Remember old entry (if any) before overwriting — so we can clean up after success
+            old_entry = next((f for f in list_files(chroma_client) if f["filename"] == safe_name), None)
 
-        # Preserve old file bytes so we can restore them if ingestion fails
-        old_file_bytes = dest.read_bytes() if dest.exists() else None
-        dest.write_bytes(content)
+            # Preserve old file bytes so we can restore them if ingestion fails
+            old_file_bytes = dest.read_bytes() if dest.exists() else None
+            dest.write_bytes(content)
 
-        try:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
-            )
-        except Exception as exc:
-            logger.exception("Ingest failed for %s", safe_name)
-            if old_file_bytes is not None:
-                dest.write_bytes(old_file_bytes)
-            else:
-                dest.unlink(missing_ok=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ingestion failed. Check server logs.") from exc
-
-        if result["chunks_created"] == 0:
-            if old_file_bytes is not None:
-                dest.write_bytes(old_file_bytes)
-            else:
-                dest.unlink(missing_ok=True)
-            # Do NOT delete old_entry here — the old file was restored on disk,
-            # so its vectors remain valid and searchable.
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="No text could be extracted from the file.",
-            )
-
-        # Delete old ChromaDB entry only after new ingestion succeeds
-        if old_entry:
             try:
-                delete_file(old_entry["file_id"], chroma_client)
-            except Exception:
-                logger.warning("Failed to delete old entry %s for %s; index may contain duplicates", old_entry["file_id"], safe_name)
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None, ingest_file, dest, chroma_client, _sync_embed, settings.chunk_size, settings.chunk_overlap
+                )
+            except Exception as exc:
+                logger.exception("Ingest failed for %s", safe_name)
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ingestion failed. Check server logs.") from exc
+
+            if result["chunks_created"] == 0:
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                # Do NOT delete old_entry here — the old file was restored on disk,
+                # so its vectors remain valid and searchable.
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="No text could be extracted from the file.",
+                )
+
+            # Delete old ChromaDB entry only after new ingestion succeeds
+            if old_entry:
+                try:
+                    delete_file(old_entry["file_id"], chroma_client)
+                except Exception:
+                    logger.warning("Failed to delete old entry %s for %s; index may contain duplicates", old_entry["file_id"], safe_name)
 
     return result
 
@@ -332,18 +333,19 @@ async def admin_delete_document(
 
     safe_name = Path(target["filename"]).name
     _upload_locks.setdefault(safe_name, asyncio.Lock())
-    async with _upload_locks[safe_name]:
-        # Re-verify the entry still exists after acquiring the lock; a concurrent
-        # upload may have replaced or removed it.
-        files_now = list_files(chroma_client)
-        if not any(f["file_id"] == file_id for f in files_now):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    async with _reindex_lock:
+        async with _upload_locks[safe_name]:
+            # Re-verify the entry still exists after acquiring the lock; a concurrent
+            # upload may have replaced or removed it.
+            files_now = list_files(chroma_client)
+            if not any(f["file_id"] == file_id for f in files_now):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-        delete_file(file_id, chroma_client)
+            delete_file(file_id, chroma_client)
 
-        filepath = DOCUMENTS_DIR / safe_name
-        if filepath.exists():
-            filepath.unlink()
+            filepath = DOCUMENTS_DIR / safe_name
+            if filepath.exists():
+                filepath.unlink()
 
     return {"deleted": file_id}
 
