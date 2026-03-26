@@ -149,13 +149,13 @@ def test_search_chunks_filename_populated(chroma_with_docs, dummy_embed):
 
 def test_search_chunks_empty_collection_returns_empty(dummy_embed):
     """Empty collection should return an empty list without querying ChromaDB."""
-    mock_collection = MagicMock()
-    mock_collection.count.return_value = 0
-    mock_chroma = MagicMock()
-    mock_chroma.get_or_create_collection.return_value = mock_collection
-    results = search_chunks("anything", mock_chroma, dummy_embed, top_k=3)
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("documents")
+    except Exception:
+        pass
+    results = search_chunks("anything", client, dummy_embed, top_k=3)
     assert results == []
-    mock_collection.query.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

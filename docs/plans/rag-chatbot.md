@@ -132,7 +132,7 @@ The goal is a working `docker compose up -d` that serves a chat UI on port 3000.
       Implement all 6 endpoints from ARCHITECTURE.md (API Endpoints section):
 
       POST /api/chat
-        Body: {question: str, history: list[{role, content}] optional}
+        Body: {question: str}
         Returns: StreamingResponse of text/event-stream
         Flow: embed question → search ChromaDB → build prompt → stream Ollama response
         Each SSE event: data: {"token": "...", "done": false}

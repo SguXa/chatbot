@@ -53,10 +53,7 @@ def make_minimal_pdf(text: str) -> bytes:
     for obj_num in range(1, 6):
         offsets[obj_num] = len(body)
         obj_data = objs[obj_num]
-        if b"stream" in obj_data:
-            body += f"{obj_num} 0 obj\n".encode() + obj_data + b"\nendobj\n"
-        else:
-            body += f"{obj_num} 0 obj\n".encode() + obj_data + b"\nendobj\n"
+        body += f"{obj_num} 0 obj\n".encode() + obj_data + b"\nendobj\n"
 
     xref_offset = len(body)
     body += b"xref\n"

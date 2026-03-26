@@ -15,7 +15,8 @@ def test_health_shape(test_client):
     resp = test_client.get("/api/health")
     data = resp.json()
     assert "status" in data
-    assert data["status"] in ("ok", "degraded")
+    # Ollama is unreachable in tests; chromadb is pre-set → status must be "degraded"
+    assert data["status"] == "degraded"
     assert isinstance(data["ollama"], bool)
     assert isinstance(data["chromadb"], bool)
     assert isinstance(data["documents_count"], int)

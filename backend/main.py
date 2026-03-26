@@ -277,7 +277,15 @@ async def admin_upload(
 
             # Preserve old file bytes so we can restore them if ingestion fails
             old_file_bytes = dest.read_bytes() if dest.exists() else None
-            dest.write_bytes(content)
+            try:
+                dest.write_bytes(content)
+            except OSError as exc:
+                logger.exception("Failed to write %s to disk", safe_name)
+                if old_file_bytes is not None:
+                    dest.write_bytes(old_file_bytes)
+                else:
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write file to disk.") from exc
 
             try:
                 loop = asyncio.get_running_loop()
@@ -300,7 +308,7 @@ async def admin_upload(
                 # Do NOT delete old_entry here — the old file was restored on disk,
                 # so its vectors remain valid and searchable.
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="No text could be extracted from the file.",
                 )
 
