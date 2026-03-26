@@ -11,6 +11,17 @@
 
 set -euo pipefail
 
+# Ensure .env exists — docker compose requires it for env_file substitution.
+if [ ! -f .env ]; then
+  if [ -f .env.example ]; then
+    cp .env.example .env
+    echo "Copied .env.example → .env (review and update credentials before production use)."
+  else
+    echo "ERROR: .env file not found. Create it from .env.example before running this script." >&2
+    exit 1
+  fi
+fi
+
 echo "Starting Ollama service..."
 docker compose up -d ollama
 

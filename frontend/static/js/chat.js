@@ -141,8 +141,13 @@
 
       if (!res.ok) {
         const errText = await res.text();
+        let errMsg = errText;
+        try {
+          const errJson = JSON.parse(errText);
+          if (errJson.detail) errMsg = errJson.detail;
+        } catch (_) { /* not JSON — use raw text */ }
         hideTyping();
-        appendErrorMessage('Error ' + res.status + ': ' + errText);
+        appendErrorMessage('Error ' + res.status + ': ' + errMsg);
         return;
       }
 
