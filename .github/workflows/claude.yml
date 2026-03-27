@@ -15,10 +15,6 @@ permissions:
 jobs:
   claude:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
     steps:
       - uses: anthropics/claude-code-action@v1
         with:
