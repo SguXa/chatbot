@@ -23,6 +23,12 @@ services:
       CHROMA_SERVER_HOST: "0.0.0.0"
       CHROMA_SERVER_HTTP_PORT: "8001"
       CHROMA_IS_PERSISTENT: "TRUE"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/heartbeat')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   backend:
@@ -35,8 +41,10 @@ services:
     volumes:
       - ./data/documents:/app/documents
     depends_on:
-      - ollama
-      - chromadb
+      ollama:
+        condition: service_started
+      chromadb:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:

@@ -12,6 +12,10 @@ from rag.chunker import chunk_text
 logger = logging.getLogger(__name__)
 
 
+class ParseError(Exception):
+    """Raised when a file cannot be parsed due to corruption or an unsupported format."""
+
+
 def parse_pdf(path: Path) -> tuple[str, dict[int, str]]:
     """Extract text from PDF. Returns (full_text, {page_num: page_text})."""
     pages: dict[int, str] = {}
@@ -44,9 +48,15 @@ def ingest_file(
     """
     suffix = filepath.suffix.lower()
     if suffix == ".pdf":
-        full_text, page_map = parse_pdf(filepath)
+        try:
+            full_text, page_map = parse_pdf(filepath)
+        except Exception as exc:
+            raise ParseError(f"Could not parse PDF: {exc}") from exc
     elif suffix == ".docx":
-        full_text = parse_docx(filepath)
+        try:
+            full_text = parse_docx(filepath)
+        except Exception as exc:
+            raise ParseError(f"Could not parse DOCX: {exc}") from exc
         page_map = {}
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
